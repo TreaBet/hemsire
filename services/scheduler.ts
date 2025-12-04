@@ -6,6 +6,7 @@ interface CandidateOptions {
     deepDesperate?: boolean; // New mode: Ignore group preferences completely
     restrictRole?: number;
     excludeRole?: number;
+    restrictSpecialty?: string; // New: Force a specific specialty (transplant/wound)
 }
 
 export class Scheduler {
@@ -64,13 +65,18 @@ export class Scheduler {
   }
 
   // Calculate day difficulty for sorting
-  // Saturday (6) is hardest due to Transplant + Weekend Limits
-  // Friday (5) is hard due to Wound constraints
-  // Sunday (0) is medium due to Weekend Limits
+  // Checks constraints to see which days are restricted for specialties
   private getDayDifficulty(day: number): number {
       const dow = this.getDayOfWeek(day);
-      if (dow === 6) return 100; // Saturday (Transplant)
-      if (dow === 5) return 80;  // Friday (Yara)
+      
+      // Check if any constraint (specialty or unit) applies to this day
+      // If a specialty is ONLY allowed on this day, it's a hard day.
+      const constraints = this.config.unitConstraints.filter(c => c.allowedDays.includes(dow));
+      
+      if (constraints.some(c => c.unit === 'Transplantasyon')) return 100; // Hardest
+      if (constraints.some(c => c.unit === 'Yara Bakım')) return 90; // Hard
+      
+      if (dow === 6) return 80;  // Saturday
       if (dow === 0) return 60;  // Sunday
       return 10; // Weekdays
   }
@@ -133,12 +139,15 @@ export class Scheduler {
     let daysToProcess = Array.from({length: this.daysInMonth}, (_, i) => i + 1);
     
     // SMART SORT: Process hardest days first (Sat > Fri > Sun > Others)
-    // This ensures specific staff (Transplant/Wound) are used on their specific days FIRST,
-    // before they are consumed by generic days.
-    daysToProcess.sort((a, b) => this.getDayDifficulty(b) - this.getDayDifficulty(a));
-
-    // Optional: Add a slight shuffle within same-difficulty days to prevent patterns
-    // (Implementation skipped to keep logic strict for now)
+    if (this.config.randomizeOrder) {
+         daysToProcess.sort((a, b) => {
+             const diff = this.getDayDifficulty(b) - this.getDayDifficulty(a);
+             if (diff !== 0) return diff;
+             return Math.random() - 0.5;
+         });
+    } else {
+        daysToProcess.sort((a, b) => this.getDayDifficulty(b) - this.getDayDifficulty(a));
+    }
 
     for (const day of daysToProcess) {
       const dayOfWeek = this.getDayOfWeek(day);
@@ -153,7 +162,6 @@ export class Scheduler {
       let seniorAssignedToday = false;
 
       // --- PHASE 1: ASSIGN 1 SENIOR (ROLE 1) GLOBALLY ---
-      // We shuffle services so different services get the senior each day
       const shuffledServicesForSenior = [...this.services].sort(() => Math.random() - 0.5);
 
       for (const service of shuffledServicesForSenior) {
@@ -162,6 +170,9 @@ export class Scheduler {
           if (!service.allowedRoles.includes(1)) continue;
           if (service.minDailyCount <= 0) continue;
 
+          // Check if this service needs a specialty reservation even for the senior
+          // (Usually seniors are generic, but just in case)
+          
           const seniorCandidate = this.findBestCandidate(
               service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
               isWeekend, isSat, isSun, isFri, 
@@ -199,11 +210,47 @@ export class Scheduler {
 
         for (let i = currentServiceCount; i < service.minDailyCount; i++) {
           
+          // --- MANDATORY SPECIALTY RESERVATION LOGIC ---
+          // Check if today is a restricted day for a specific specialty (e.g., Saturday for Transplant)
+          let restrictedSpecialtyForSlot: string | undefined = undefined;
+
+          // Look through constraints
+          for (const constraint of this.config.unitConstraints) {
+               // constraint.unit is essentially the name of the specialty/unit constraint
+               // If today is a restricted day for this constraint
+               if (constraint.allowedDays.includes(dayOfWeek)) {
+                   
+                   // Map constraint name to internal specialty code
+                   let targetSpecialty: string | undefined = undefined;
+                   if (constraint.unit === 'Transplantasyon') targetSpecialty = 'transplant';
+                   if (constraint.unit === 'Yara Bakım') targetSpecialty = 'wound';
+                   
+                   if (targetSpecialty) {
+                       // Check if we already assigned someone with this specialty to this service
+                       const assignedSpecialtyCount = currentDayAssignments.filter(
+                           a => a.serviceId === service.id && 
+                           this.staff.find(s => s.id === a.staffId)?.specialty === targetSpecialty
+                       ).length;
+                       
+                       // If not assigned yet, LOCK this slot
+                       if (assignedSpecialtyCount === 0) {
+                           // Ensure this service actually allows the unit of the specialty staff
+                           // (Since specialty staff are usually 'Genel Cerrahi', and service allows 'Genel Cerrahi', it works)
+                           restrictedSpecialtyForSlot = targetSpecialty;
+                           break; 
+                       }
+                   }
+               }
+          }
+
           // 1. Normal Try
           let bestCandidate = this.findBestCandidate(
               service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
               isWeekend, isSat, isSun, isFri, 
-              { excludeRole: seniorAssignedToday ? 1 : undefined } 
+              { 
+                  excludeRole: seniorAssignedToday ? 1 : undefined,
+                  restrictSpecialty: restrictedSpecialtyForSlot
+              } 
           );
 
           // 2. Desperate Try (Relax soft constraints)
@@ -213,7 +260,8 @@ export class Scheduler {
                   isWeekend, isSat, isSun, isFri, 
                   { 
                       desperate: true,
-                      excludeRole: seniorAssignedToday ? 1 : undefined 
+                      excludeRole: seniorAssignedToday ? 1 : undefined,
+                      restrictSpecialty: restrictedSpecialtyForSlot
                   }
               );
           }
@@ -226,7 +274,8 @@ export class Scheduler {
                   { 
                       desperate: true,
                       deepDesperate: true, // Ignore group preferences
-                      excludeRole: seniorAssignedToday ? 1 : undefined 
+                      excludeRole: seniorAssignedToday ? 1 : undefined,
+                      restrictSpecialty: restrictedSpecialtyForSlot
                   }
               );
           }
@@ -259,7 +308,7 @@ export class Scheduler {
                  currentDayAssignments.push({
                     serviceId: service.id,
                     staffId: 'EMPTY',
-                    staffName: `BOŞ (Min:${service.minDailyCount})`,
+                    staffName: restrictedSpecialtyForSlot ? `BOŞ (${restrictedSpecialtyForSlot}!)` : `BOŞ (Min:${service.minDailyCount})`,
                     role: 0,
                     group: 'Genel',
                     unit: '-',
@@ -307,12 +356,14 @@ export class Scheduler {
   ): Staff | null {
       
       const dayOfWeek = this.getDayOfWeek(day); 
-      // const desperateMode = options.desperate || false; // Not used directly in filtering, but implies relaxed filters elsewhere if we had them
-
+      
       const candidates = this.staff.filter(person => {
-          // --- ROLE FILTERS ---
+          // --- OPTIONS FILTERS ---
           if (options.restrictRole !== undefined && person.role !== options.restrictRole) return false;
           if (options.excludeRole !== undefined && person.role === options.excludeRole) return false;
+          
+          // CRITICAL: Mandatory Specialty Reservation
+          if (options.restrictSpecialty && person.specialty !== options.restrictSpecialty) return false;
 
           // --- HARD CONSTRAINTS ---
           
@@ -329,16 +380,33 @@ export class Scheduler {
           
           if (!isNewNurse) {
               // A. Service Unit Matching
+              // If service allows specific units, check if person matches
               if (service.allowedUnits && service.allowedUnits.length > 0) {
                   if (!service.allowedUnits.includes(person.unit)) return false;
               }
 
-              // B. Unit Day Constraints
-              // Check if this person's unit has a restriction
+              // B. Unit Day Constraints (Legacy Unit Check)
+              // If unitConstraint matches person.unit, apply days
               const constraint = this.config.unitConstraints.find(c => c.unit === person.unit);
               if (constraint) {
-                  // If constraint exists, person can ONLY work on allowed days
                   if (!constraint.allowedDays.includes(dayOfWeek)) return false;
+              }
+              
+              // C. Specialty Day Constraints
+              // If person has specialty, and there is a constraint for that specialty name
+              if (person.specialty && person.specialty !== 'none') {
+                  let specName = '';
+                  if (person.specialty === 'transplant') specName = 'Transplantasyon';
+                  if (person.specialty === 'wound') specName = 'Yara Bakım';
+                  
+                  const specConstraint = this.config.unitConstraints.find(c => c.unit === specName);
+                  if (specConstraint) {
+                      // If constraint exists, they can ONLY work on allowed days (if strictly enforced)
+                      // OR we interpret it as "Priority on these days", but the user asked "Nöbet yazılabilir haftanın günü"
+                      // implying they CANNOT work on other days? 
+                      // Let's assume STRICT restriction for specialty staff.
+                      if (!specConstraint.allowedDays.includes(dayOfWeek)) return false;
+                  }
               }
           }
 
@@ -359,9 +427,6 @@ export class Scheduler {
           if (isSat && this.hasShiftOnDay(dayAssignmentsMap, day - 2, person.id)) return false;
           if (isSun && this.hasShiftOnDay(dayAssignmentsMap, day - 3, person.id)) return false;
           if (dayOfWeek === 4) {
-             // If today is Thursday, prevent if they work upcoming Sat/Sun
-             // NOTE: This check depends on future days. Since we sort by difficulty (Sat first), 
-             // Sat/Sun might already be filled. If not, this check is optimistic.
              if (this.hasShiftOnDay(dayAssignmentsMap, day + 2, person.id)) return false;
              if (this.hasShiftOnDay(dayAssignmentsMap, day + 3, person.id)) return false;
           }
@@ -378,33 +443,41 @@ export class Scheduler {
 
           // SCORING LOGIC
 
-          // 1. Unit Constraint Priority (CRITICAL)
-          // If this person belongs to a unit that is restricted to specific days (e.g. Transplant on Sat),
-          // and TODAY is that day, we must prioritized them heavily.
-          // Otherwise, generic staff might take the slot, and this specialist won't find a place.
-          const constraint = this.config.unitConstraints.find(c => c.unit === person.unit);
-          if (constraint && constraint.allowedDays.includes(dayOfWeek)) {
-             score += 50000; // Increased priority
+          // 1. Mandatory Reservation Bonus
+          // If we are looking for a restricted specialty, they get massive priority
+          if (options.restrictSpecialty && person.specialty === options.restrictSpecialty) {
+              score += 200000;
           }
 
-          // 2. Request Priority
+          // 2. Specialty Priority (Fallback)
+          if (person.specialty && person.specialty !== 'none') {
+             let specName = '';
+             if (person.specialty === 'transplant') specName = 'Transplantasyon';
+             if (person.specialty === 'wound') specName = 'Yara Bakım';
+             const constraint = this.config.unitConstraints.find(c => c.unit === specName);
+             if (constraint && constraint.allowedDays.includes(dayOfWeek)) {
+                 score += 100000;
+             }
+          }
+
+          // 3. Request Priority
           if (person.requestedDays && person.requestedDays.includes(day)) {
               score += 20000;
           }
 
-          // 3. Quota Hunger
+          // 4. Quota Hunger
           const remaining = person.quotaService - stats.service;
           score += (remaining * 1000);
 
-          // 4. Weekend Fairness
+          // 5. Weekend Fairness
           if (isWeekend) score -= (stats.weekend * 2000);
 
-          // 5. Spread (Soft Constraint)
+          // 6. Spread (Soft Constraint)
           if (this.config.preventEveryOtherDay) {
               if (this.hasShiftOnDay(dayAssignmentsMap, day - 2, person.id)) score -= 1000;
           }
 
-          // 6. Group Preference (Bonus if matching, though we might have filtered already)
+          // 7. Group Preference
           if (service.preferredGroup && service.preferredGroup !== 'Farketmez') {
               if (person.group === service.preferredGroup) score += 500;
           }

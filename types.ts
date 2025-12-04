@@ -1,16 +1,18 @@
 
 export type Role = number; // 1 (Kıdemli), 2 (Orta), 3 (Yeni/Çömez)
 export type Group = 'A' | 'B' | 'C' | 'D' | 'Genel';
+export type Specialty = 'none' | 'transplant' | 'wound';
 
 export interface Staff {
   id: string;
   name: string;
   role: number; // 1: Sorumlu/Kıdemli, 2: Tecrübeli, 3: Yeni Başlayan
-  unit: string; // Branş: 'Genel Cerrahi', 'KBB', 'Plastik', 'Transplantasyon', 'Yara', vb.
-  room: string; // Salon No / Oda No: Çakışma kontrolü için (Örn: "Salon 1")
-  group: Group; // Nöbet Grubu (Opsiyonel, A/B/C/D)
+  unit: string; // Branş: 'Genel Cerrahi', 'KBB' vb.
+  specialty?: Specialty; // 'none', 'transplant', 'wound'
+  room: string; // Salon No / Oda No
+  group: Group; // Nöbet Grubu
   quotaService: number; // Aylık Toplam Nöbet Hedefi
-  quotaEmergency: number; // Kullanılmıyor (Eski yapıdan kaldı, 0 geçilebilir)
+  quotaEmergency: number; 
   weekendLimit: number; // Haftasonu Limiti
   offDays: number[]; // İzinli Günler
   requestedDays: number[]; // Nöbet İsteği
@@ -18,7 +20,7 @@ export interface Staff {
 }
 
 export interface UnitConstraint {
-    unit: string;
+    unit: string; // Can be a Unit name OR a Specialty name
     allowedDays: number[]; // 0=Pazar, 1=Pzt, ..., 6=Cmt
 }
 

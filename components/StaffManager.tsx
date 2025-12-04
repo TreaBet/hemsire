@@ -1,8 +1,8 @@
 
 import React, { useState, useRef, useMemo } from 'react';
-import { Staff, RoleConfig } from '../types';
+import { Staff, RoleConfig, Specialty } from '../types';
 import { Card, Button, DateSelectModal } from './ui';
-import { RefreshCw, FileJson, Upload, CheckCircle2, Circle, Stethoscope, DoorOpen, Layers, X, UserPlus, Trash2, Users, AlertCircle } from 'lucide-react';
+import { RefreshCw, FileJson, Upload, CheckCircle2, Circle, Stethoscope, DoorOpen, Layers, X, UserPlus, Trash2, Users, AlertCircle, Star } from 'lucide-react';
 
 interface StaffManagerProps {
     staff: Staff[];
@@ -26,7 +26,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
     const fileInputRef = useRef<HTMLInputElement>(null);
     const backupInputRef = useRef<HTMLInputElement>(null);
     const [newStaff, setNewStaff] = useState<Partial<Staff>>({ 
-        name: '', role: 2, unit: 'Genel Cerrahi', room: '', group: 'A', quotaService: 7, quotaEmergency: 0, weekendLimit: 2, offDays: [], requestedDays: [], isActive: true
+        name: '', role: 2, unit: 'Genel Cerrahi', specialty: 'none', room: '', group: 'A', quotaService: 7, quotaEmergency: 0, weekendLimit: 2, offDays: [], requestedDays: [], isActive: true
     });
 
     const [dateModal, setDateModal] = useState<{ isOpen: boolean, staffId: string, type: 'off' | 'request' } | null>(null);
@@ -52,15 +52,12 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
     const handleAddStaff = () => {
         if (!newStaff.name) return;
         setStaff(prev => [...prev, { ...newStaff, id: Date.now().toString(), isActive: true } as Staff]);
-        setNewStaff({ name: '', role: 2, unit: 'Genel Cerrahi', room: '', group: 'A', quotaService: 7, quotaEmergency: 0, weekendLimit: 2, offDays: [], requestedDays: [], isActive: true });
+        setNewStaff({ name: '', role: 2, unit: 'Genel Cerrahi', specialty: 'none', room: '', group: 'A', quotaService: 7, quotaEmergency: 0, weekendLimit: 2, offDays: [], requestedDays: [], isActive: true });
     };
 
     const handleDeleteStaff = (e: React.MouseEvent, id: string) => {
-        // Stop propagation strictly to prevent card click issues
         e.preventDefault();
         e.stopPropagation();
-        
-        // Simple confirm dialog
         if(window.confirm("Bu personeli silmek istediğinize emin misiniz?")) {
             setStaff(prev => prev.filter(s => s.id !== id));
         }
@@ -101,15 +98,11 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                 return;
             }
 
-            // 1. Identify Target IDs FIRST
             let targetIds: string[] = [];
-
             if (bulkUnit === 'ALL') {
                 targetIds = staff.map(s => s.id);
             } else {
-                targetIds = staff
-                    .filter(s => (s.unit || "").trim() === bulkUnit)
-                    .map(s => s.id);
+                targetIds = staff.filter(s => (s.unit || "").trim() === bulkUnit).map(s => s.id);
             }
 
             if (targetIds.length === 0) {
@@ -117,19 +110,13 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                 return;
             }
 
-            // 2. Functional Update with ID lookup (Safe & Fast)
             setStaff(prevStaff => prevStaff.map(s => {
                 if (targetIds.includes(s.id)) {
-                    return { 
-                        ...s, 
-                        quotaService: targetQuota, 
-                        weekendLimit: targetWeekend 
-                    };
+                    return { ...s, quotaService: targetQuota, weekendLimit: targetWeekend };
                 }
                 return s;
             }));
             
-            // 3. Close Modal Immediately
             setShowBulkModal(false);
             
         } catch (error) {
@@ -185,13 +172,19 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                             <option value="KBB">KBB</option>
                             <option value="Beyin ve Ortopedi">Beyin ve Ortopedi</option>
                             <option value="Plastik">Plastik</option>
-                            <option value="Transplantasyon">Transplantasyon</option>
-                            <option value="Yara">Yara Bakım</option>
                         </select>
                     </div>
                     <div className="md:col-span-2">
-                        <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>SALON NO</label>
-                        <input type="text" value={newStaff.room} onChange={e => setNewStaff({...newStaff, room: e.target.value})} className={inputClass} placeholder="Örn: 1" />
+                        <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>ÖZELLİK DURUMU</label>
+                        <select value={newStaff.specialty} onChange={e => setNewStaff({...newStaff, specialty: e.target.value as Specialty})} className={inputClass}>
+                            <option value="none">Özellik Yok (Normal)</option>
+                            <option value="transplant">Transplantasyon</option>
+                            <option value="wound">Yara Bakım</option>
+                        </select>
+                    </div>
+                    <div className="md:col-span-1">
+                        <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>SALON</label>
+                        <input type="text" value={newStaff.room} onChange={e => setNewStaff({...newStaff, room: e.target.value})} className={inputClass} placeholder="No" />
                     </div>
                     <div className="md:col-span-2">
                          <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>KIDEM</label>
@@ -202,12 +195,11 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                         </select>
                     </div>
                     <div className="md:col-span-1">
-                         <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>HEDEF</label>
-                         <input type="number" value={newStaff.quotaService} onChange={e => setNewStaff({...newStaff, quotaService: parseInt(e.target.value) || 0})} className={inputClass} />
-                    </div>
-                    <div className="md:col-span-1">
-                         <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>HS LİMİT</label>
-                         <input type="number" value={newStaff.weekendLimit} onChange={e => setNewStaff({...newStaff, weekendLimit: parseInt(e.target.value) || 0})} className={inputClass} />
+                         <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>HEDEF / HS</label>
+                         <div className="flex gap-1">
+                             <input type="number" value={newStaff.quotaService} onChange={e => setNewStaff({...newStaff, quotaService: parseInt(e.target.value) || 0})} className={inputClass} placeholder="Hedef" />
+                             <input type="number" value={newStaff.weekendLimit} onChange={e => setNewStaff({...newStaff, weekendLimit: parseInt(e.target.value) || 0})} className={inputClass} placeholder="HS" />
+                         </div>
                     </div>
                     <div className="md:col-span-1">
                         <Button onClick={handleAddStaff} className={`w-full h-[42px] ${isBlackAndWhite ? '!bg-indigo-600 !border-indigo-500 text-white' : ''}`}>
@@ -234,7 +226,6 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                             : `${person.isActive !== false ? 'border-l-indigo-500' : 'border-l-gray-300 bg-gray-50 opacity-60'}`
                         }`}
                     >
-                        {/* Z-Index increased to 20 to ensure it's above everything else */}
                         <button 
                             onClick={(e) => toggleStaffActive(e, person.id)} 
                             className={`absolute top-3 left-3 transition-colors z-20 p-1 rounded-full ${
@@ -242,7 +233,6 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                                 ? 'text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50' 
                                 : (isBlackAndWhite ? 'text-slate-600 hover:text-slate-400 hover:bg-slate-800' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100')
                             }`}
-                            title={person.isActive !== false ? "Pasife Al" : "Aktifleştir"}
                         >
                             {person.isActive !== false ? <CheckCircle2 className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
                         </button>
@@ -254,7 +244,6 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                                 ? 'text-gray-600 hover:text-red-400 hover:bg-slate-800' 
                                 : 'text-gray-300 hover:text-red-500 hover:bg-red-50'
                             }`}
-                            title="Personeli Sil"
                         >
                             <Trash2 className="w-4 h-4" />
                         </button>
@@ -276,6 +265,18 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                                  </div>
                              </div>
                         </div>
+
+                        {/* SPECIALTY BADGE */}
+                        {person.specialty && person.specialty !== 'none' && (
+                            <div className={`mb-3 ml-8 text-xs font-bold px-2 py-1 rounded inline-flex items-center gap-1 ${
+                                person.specialty === 'transplant' 
+                                ? (isBlackAndWhite ? 'bg-purple-900/50 text-purple-200 border border-purple-800' : 'bg-purple-100 text-purple-700 border border-purple-200')
+                                : (isBlackAndWhite ? 'bg-orange-900/50 text-orange-200 border border-orange-800' : 'bg-orange-100 text-orange-700 border border-orange-200')
+                            }`}>
+                                <Star className="w-3 h-3" />
+                                {person.specialty === 'transplant' ? 'Transplantasyon' : 'Yara Bakım'}
+                            </div>
+                        )}
 
                         <div className={`grid grid-cols-3 gap-2 text-center text-xs p-2 rounded-lg mb-4 ${isBlackAndWhite ? 'bg-slate-800' : 'bg-white shadow-sm border border-gray-100'}`}>
                              <div>
@@ -304,67 +305,53 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                 ))}
             </div>
 
-            {/* Bulk Edit Modal */}
-            {showBulkModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
-                    <div className={`bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-in border ${isBlackAndWhite ? '!bg-slate-900 !border-slate-700' : 'border-gray-100'}`}>
-                        <div className={`p-4 border-b flex justify-between items-center ${isBlackAndWhite ? 'bg-slate-950 border-slate-800' : 'bg-gray-50'}`}>
-                            <h3 className={`font-bold text-lg ${isBlackAndWhite ? 'text-white' : 'text-gray-900'}`}>Toplu Hedef Düzenle</h3>
-                            <button onClick={() => setShowBulkModal(false)} className={`p-1 rounded-full ${isBlackAndWhite ? 'hover:bg-slate-800' : 'hover:bg-gray-200'}`}><X className={`w-5 h-5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`} /></button>
-                        </div>
-                        <div className="p-6 space-y-4">
-                            <p className={`text-sm ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-600'}`}>
-                                Seçtiğiniz birime veya tüm personele ait nöbet hedeflerini tek seferde güncelleyin.
-                            </p>
-                            
-                            <div className="space-y-2">
-                                <label className={`block text-xs font-bold uppercase tracking-wide ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>BİRİM / KAPSAM</label>
-                                <select value={bulkUnit} onChange={(e) => setBulkUnit(e.target.value)} className={inputClass}>
-                                    <option value="ALL">TÜM BİRİMLER (Herkes)</option>
-                                    {uniqueUnits.map(u => (
-                                        <option key={u} value={u}>{u}</option>
-                                    ))}
-                                </select>
-                                
-                                <div className={`flex items-center gap-2 p-2 rounded-lg text-xs font-bold ${isBlackAndWhite ? 'bg-indigo-900/30 text-indigo-200 border border-indigo-500/30' : 'bg-indigo-50 text-indigo-700 border border-indigo-100'}`}>
-                                    <AlertCircle className="w-4 h-4" />
-                                    <span>Bu işlem {affectedCount} personeli etkileyecek.</span>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>YENİ HEDEF</label>
-                                    <input type="number" value={bulkQuota} onChange={(e) => setBulkQuota(e.target.value)} className={inputClass} placeholder="7" />
-                                </div>
-                                <div>
-                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>HS LİMİTİ</label>
-                                    <input type="number" value={bulkWeekend} onChange={(e) => setBulkWeekend(e.target.value)} className={inputClass} placeholder="2" />
-                                </div>
-                            </div>
-
-                            <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-gray-100">
-                                <Button variant="ghost" onClick={() => setShowBulkModal(false)} className={isBlackAndWhite ? 'text-gray-400 hover:text-white hover:bg-slate-800' : ''}>İptal</Button>
-                                <Button variant="primary" onClick={applyBulkUpdate}>Uygula</Button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
+            {/* Date Select Modal */}
             {dateModal && (
-                <DateSelectModal 
+                <DateSelectModal
                     isOpen={dateModal.isOpen}
                     onClose={() => setDateModal(null)}
-                    title={dateModal.type === 'off' ? 'İzinli Günleri Seç' : 'Nöbet İstenen Günleri Seç'}
-                    selectedDays={dateModal.type === 'off' 
-                        ? (staff.find(s => s.id === dateModal.staffId)?.offDays || []) 
-                        : (staff.find(s => s.id === dateModal.staffId)?.requestedDays || [])
-                    }
+                    title={dateModal.type === 'off' ? 'İzinli Günleri Seçin' : 'Nöbet İsteği Seçin'}
+                    selectedDays={staff.find(s => s.id === dateModal.staffId)?.[dateModal.type === 'off' ? 'offDays' : 'requestedDays'] || []}
                     onSave={handleDateSave}
                     daysInMonth={daysInMonth}
                     color={dateModal.type === 'off' ? 'red' : 'green'}
                 />
+            )}
+
+            {/* Bulk Edit Modal */}
+            {showBulkModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className={`bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-in border ${isBlackAndWhite ? '!bg-slate-900 !border-slate-800 text-white' : 'border-gray-200'}`}>
+                        <div className={`p-4 border-b flex justify-between items-center ${isBlackAndWhite ? 'bg-slate-800 border-slate-700' : 'bg-gray-50 border-gray-100'}`}>
+                            <h3 className="font-bold text-lg">Toplu Düzenle</h3>
+                            <button onClick={() => setShowBulkModal(false)} className="p-1 rounded-full hover:bg-black/10"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Hangi Birim?</label>
+                                <select value={bulkUnit} onChange={e => setBulkUnit(e.target.value)} className={inputClass}>
+                                    <option value="ALL">TÜM BİRİMLER</option>
+                                    {uniqueUnits.map(u => <option key={u} value={u}>{u}</option>)}
+                                </select>
+                                <div className={`text-xs mt-2 p-2 rounded ${isBlackAndWhite ? 'bg-blue-900/30 text-blue-200' : 'bg-blue-50 text-blue-700'}`}>
+                                    Bu seçim <b>{affectedCount}</b> personeli etkileyecek.
+                                </div>
+                            </div>
+                            <div>
+                                <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Yeni Nöbet Hedefi</label>
+                                <input type="number" value={bulkQuota} onChange={e => setBulkQuota(e.target.value)} className={inputClass} />
+                            </div>
+                            <div>
+                                <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Yeni Haftasonu Limiti</label>
+                                <input type="number" value={bulkWeekend} onChange={e => setBulkWeekend(e.target.value)} className={inputClass} />
+                            </div>
+                        </div>
+                        <div className={`p-4 border-t flex justify-end gap-3 ${isBlackAndWhite ? 'bg-slate-800 border-slate-700' : 'bg-gray-50 border-gray-100'}`}>
+                            <Button variant="ghost" onClick={() => setShowBulkModal(false)} className={isBlackAndWhite ? 'text-gray-400 hover:text-white' : ''}>İptal</Button>
+                            <Button onClick={applyBulkUpdate}>Uygula</Button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

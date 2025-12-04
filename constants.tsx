@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Users, Calendar, Settings, ShieldCheck, Download, Trash2, Plus, UserPlus, FileSpreadsheet, AlertTriangle, CheckSquare, Heart, Upload, FileDown, Info, Stethoscope, DoorOpen } from 'lucide-react';
+import { Users, Calendar, Settings, ShieldCheck, Download, Trash2, Plus, UserPlus, FileSpreadsheet, AlertTriangle, CheckSquare, Heart, Upload, FileDown, Info, Stethoscope, DoorOpen, Star } from 'lucide-react';
 import { UnitConstraint } from './types';
 
 export const ICONS = {
@@ -20,23 +20,23 @@ export const ICONS = {
     Heart: <Heart className="w-4 h-4" />,
     Info: <Info className="w-5 h-5" />,
     Unit: <Stethoscope className="w-4 h-4" />,
-    Room: <DoorOpen className="w-4 h-4" />
+    Room: <DoorOpen className="w-4 h-4" />,
+    Star: <Star className="w-4 h-4" />
 };
 
 export const MOCK_STAFF = [] as const;
 
 export const MOCK_SERVICES = [
   // Genel Cerrahi: Min 2, Max 2.
-  // İzin verilen birimlere 'Transplantasyon' ve 'Yara' eklendi.
-  // Sistem önce zorlu günlerde (Cmt/Cuma) kısıtlı birimleri (Trans/Yara) atayacak,
-  // yanına bir Genel Cerrahi koyacak. Böylece toplam 2 kişi olacak.
+  // Artık 'Transplantasyon' ve 'Yara' ayrı birim olarak değil, Genel Cerrahi içindeki 'Özellik' olarak yönetiliyor.
+  // Bu yüzden allowedUnits sadece 'Genel Cerrahi' içeriyor.
   { 
       id: 's1', 
       name: 'Genel Cerrahi Nöbeti', 
       minDailyCount: 2, 
       maxDailyCount: 2, 
       allowedRoles: [1, 2, 3], 
-      allowedUnits: ['Genel Cerrahi', 'Transplantasyon', 'Yara'], 
+      allowedUnits: ['Genel Cerrahi'], 
       preferredGroup: 'Farketmez', 
       isEmergency: false 
   },
@@ -46,6 +46,6 @@ export const MOCK_SERVICES = [
 ] as const;
 
 export const DEFAULT_UNIT_CONSTRAINTS: UnitConstraint[] = [
-    { unit: 'Transplantasyon', allowedDays: [6] }, // Sadece Cumartesi (6)
-    { unit: 'Yara', allowedDays: [5] } // Sadece Cuma (5)
+    { unit: 'Transplantasyon', allowedDays: [6] }, // Özellik Adı: Transplantasyon -> Cmt
+    { unit: 'Yara Bakım', allowedDays: [5] }       // Özellik Adı: Yara Bakım -> Cuma
 ];

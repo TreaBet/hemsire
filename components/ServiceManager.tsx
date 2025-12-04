@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { Service, Staff, Group, UnitConstraint } from '../types';
 import { Card, Button, Badge, MultiSelect } from './ui';
@@ -25,9 +26,12 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
 
     const uniqueRoles = useMemo(() => Array.from(new Set(staff.map(s => s.role))).sort((a: number, b: number) => a - b), [staff]);
     
-    // Get unique units from staff
-    const uniqueUnits = useMemo(() => {
+    // Get unique units from staff + append Specialties manually so they can be configured
+    const uniqueConstraintTargets = useMemo(() => {
         const units = new Set(staff.map(s => s.unit || "").filter(u => u.trim() !== ""));
+        // Add specific specialty names that map to logic
+        units.add('Transplantasyon');
+        units.add('Yara Bakım');
         return Array.from(units).sort();
     }, [staff]);
 
@@ -78,20 +82,8 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
         let newConstraints = [...unitConstraints];
         
         if (existingIdx === -1) {
-            // New constraint, start with all days enabled EXCEPT the one toggled? 
-            // Or start with none? Usually better to start with "Only this day" if user clicks.
-            // But here we show buttons. Let's assume if no constraint exists, it means ALL days allowed.
-            // So if user clicks a day, they probably want to restrict.
-            // Actually, if no constraint object exists, logic says "Any day".
-            // So if user creates a constraint object, we should populate it with current state.
-            // Strategy: If user clicks a day, we create constraint with that day toggled OFF (since default is ON).
-            // Wait, standard UI: Button active = Allowed. Button inactive = Restricted.
-            // Default (No object) = All Active.
-            // So clicking a day means "Disable this day".
-            
-            // Create object with all days allowed (0..6)
+            // Default allow all except clicked
             const allDays = [0,1,2,3,4,5,6];
-            // Remove the clicked day
             const newAllowed = allDays.filter(d => d !== dayIndex);
             newConstraints.push({ unit: unitName, allowedDays: newAllowed });
         } else {
@@ -104,7 +96,7 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
                 current.allowedDays = [...current.allowedDays, dayIndex].sort();
             }
             
-            // Cleanup: If all days allowed, remove constraint object to save space/logic
+            // Cleanup
             if (current.allowedDays.length === 7) {
                 newConstraints = newConstraints.filter((_, i) => i !== existingIdx);
             } else {
@@ -147,41 +139,43 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
             {setUnitConstraints && (
                 <Card className={`p-6 border-l-4 transition-colors ${isBlackAndWhite ? '!bg-slate-900 !border-slate-800 border-l-blue-500' : 'border-l-blue-500'}`}>
                     <h3 className={`font-bold text-lg mb-4 flex items-center gap-2 ${isBlackAndWhite ? 'text-white' : 'text-gray-900'}`}>
-                        <Calendar className="w-5 h-5"/> Birim Çalışma Günleri
+                        <Calendar className="w-5 h-5"/> Özellik/Branş Gün Kısıtlamaları
                     </h3>
                     <p className={`text-sm mb-4 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-600'}`}>
-                        Belirli branşların sadece haftanın belirli günlerinde nöbet tutmasını istiyorsanız buradan ayarlayabilirsiniz.
-                        (Yeşil: Nöbet Yazılabilir, Gri: Yazılamaz)
+                        Belirli branşların veya özelliklerin (Örn: Transplantasyon) sadece haftanın belirli günlerinde nöbet tutmasını istiyorsanız buradan ayarlayabilirsiniz.
                     </p>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {uniqueUnits.map(unit => (
-                            <div key={unit} className={`p-3 rounded-lg border ${isBlackAndWhite ? 'border-slate-700 bg-slate-800' : 'border-gray-200 bg-gray-50'}`}>
-                                <div className={`font-bold text-sm mb-2 ${isBlackAndWhite ? 'text-white' : 'text-gray-800'}`}>{unit}</div>
-                                <div className="flex justify-between gap-1">
-                                    {days.map((d, idx) => {
-                                        const allowed = isDayAllowed(unit, idx);
-                                        return (
-                                            <button 
-                                                key={idx}
-                                                onClick={() => toggleUnitDay(unit, idx)}
-                                                className={`flex-1 py-1 rounded text-[10px] font-bold transition-all ${
-                                                    allowed 
-                                                    ? 'bg-emerald-500 text-white shadow-sm hover:bg-emerald-600' 
-                                                    : (isBlackAndWhite ? 'bg-slate-900 text-slate-600' : 'bg-gray-200 text-gray-400')
-                                                }`}
-                                                title={allowed ? "Nöbet Yazılabilir" : "Nöbet Yazılamaz"}
-                                            >
-                                                {d}
-                                            </button>
-                                        )
-                                    })}
+                        {uniqueConstraintTargets.map(unit => {
+                            const isSpecialty = unit === 'Transplantasyon' || unit === 'Yara Bakım';
+                            return (
+                                <div key={unit} className={`p-3 rounded-lg border ${isBlackAndWhite ? 'border-slate-700 bg-slate-800' : 'border-gray-200 bg-gray-50'}`}>
+                                    <div className={`font-bold text-sm mb-2 flex items-center gap-2 ${isBlackAndWhite ? 'text-white' : 'text-gray-800'}`}>
+                                        {unit} 
+                                        {isSpecialty && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">Özel</span>}
+                                    </div>
+                                    <div className="flex justify-between gap-1">
+                                        {days.map((d, idx) => {
+                                            const allowed = isDayAllowed(unit, idx);
+                                            return (
+                                                <button 
+                                                    key={idx}
+                                                    onClick={() => toggleUnitDay(unit, idx)}
+                                                    className={`flex-1 py-1 rounded text-[10px] font-bold transition-all ${
+                                                        allowed 
+                                                        ? 'bg-emerald-500 text-white shadow-sm hover:bg-emerald-600' 
+                                                        : (isBlackAndWhite ? 'bg-slate-900 text-slate-600' : 'bg-gray-200 text-gray-400')
+                                                    }`}
+                                                    title={allowed ? "Nöbet Yazılabilir" : "Nöbet Yazılamaz"}
+                                                >
+                                                    {d}
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
-                        {uniqueUnits.length === 0 && (
-                            <div className={`text-sm italic ${isBlackAndWhite ? 'text-gray-500' : 'text-gray-400'}`}>Personel eklediğinizde branşlar burada listelenecektir.</div>
-                        )}
+                            );
+                        })}
                     </div>
                 </Card>
             )}
