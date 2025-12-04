@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Staff, RoleConfig } from '../types';
 import { Card, Button, DateSelectModal } from './ui';
 import { RefreshCw, FileJson, Upload, CheckCircle2, Circle, Stethoscope, DoorOpen, Layers, X, UserPlus, Trash2, Users, AlertCircle } from 'lucide-react';
@@ -60,6 +60,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
         e.preventDefault();
         e.stopPropagation();
         
+        // Simple confirm dialog
         if(window.confirm("Bu personeli silmek istediğinize emin misiniz?")) {
             setStaff(prev => prev.filter(s => s.id !== id));
         }
@@ -117,7 +118,6 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
             }
 
             // 2. Functional Update with ID lookup (Safe & Fast)
-            // Removed window.confirm to streamline UX - the modal preview is enough warning.
             setStaff(prevStaff => prevStaff.map(s => {
                 if (targetIds.includes(s.id)) {
                     return { 
@@ -363,4 +363,9 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                     }
                     onSave={handleDateSave}
                     daysInMonth={daysInMonth}
-                    color={dateModal.type
+                    color={dateModal.type === 'off' ? 'red' : 'green'}
+                />
+            )}
+        </div>
+    );
+};
