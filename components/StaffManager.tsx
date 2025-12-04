@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useMemo } from 'react';
-import { Staff, RoleConfig, Specialty, Group } from '../types';
+import { Staff, RoleConfig, Specialty } from '../types';
 import { Card, Button, DateSelectModal } from './ui';
 import { RefreshCw, FileJson, Upload, CheckCircle2, Circle, Stethoscope, DoorOpen, Layers, X, UserPlus, Trash2, Users, AlertCircle, Star, Pencil } from 'lucide-react';
 
@@ -26,7 +26,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
     const fileInputRef = useRef<HTMLInputElement>(null);
     const backupInputRef = useRef<HTMLInputElement>(null);
     const [newStaff, setNewStaff] = useState<Partial<Staff>>({ 
-        name: '', role: 2, unit: 'Genel Cerrahi', specialty: 'none', room: '', group: 'A', quotaService: 7, quotaEmergency: 0, weekendLimit: 2, offDays: [], requestedDays: [], isActive: true
+        name: '', role: 2, unit: 'Genel Cerrahi', specialty: 'none', room: '', quotaService: 2, quotaEmergency: 0, weekendLimit: 1, offDays: [], requestedDays: [], isActive: true
     });
 
     const [dateModal, setDateModal] = useState<{ isOpen: boolean, staffId: string, type: 'off' | 'request' } | null>(null);
@@ -37,8 +37,9 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
     // Bulk Edit State
     const [showBulkModal, setShowBulkModal] = useState(false);
     const [bulkUnit, setBulkUnit] = useState<string>('ALL'); // Default to ALL
-    const [bulkQuota, setBulkQuota] = useState<string>('7'); 
-    const [bulkWeekend, setBulkWeekend] = useState<string>('2'); 
+    const [bulkRole, setBulkRole] = useState<string>('ALL'); // Default to ALL
+    const [bulkQuota, setBulkQuota] = useState<string>('2'); 
+    const [bulkWeekend, setBulkWeekend] = useState<string>('1'); 
 
     // Extract unique units for dropdown, normalize spaces
     const uniqueUnits = useMemo(() => {
@@ -48,14 +49,17 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
 
     // Calculate affected staff count for preview based on EXACT match or ALL
     const affectedCount = useMemo(() => {
-        if (bulkUnit === 'ALL') return staff.length;
-        return staff.filter(s => (s.unit || "").trim() === bulkUnit).length;
-    }, [staff, bulkUnit]);
+        return staff.filter(s => {
+            const unitMatch = bulkUnit === 'ALL' || (s.unit || "").trim() === bulkUnit;
+            const roleMatch = bulkRole === 'ALL' || s.role.toString() === bulkRole;
+            return unitMatch && roleMatch;
+        }).length;
+    }, [staff, bulkUnit, bulkRole]);
 
     const handleAddStaff = () => {
         if (!newStaff.name) return;
         setStaff(prev => [...prev, { ...newStaff, id: Date.now().toString(), isActive: true } as Staff]);
-        setNewStaff({ name: '', role: 2, unit: 'Genel Cerrahi', specialty: 'none', room: '', group: 'A', quotaService: 7, quotaEmergency: 0, weekendLimit: 2, offDays: [], requestedDays: [], isActive: true });
+        setNewStaff({ name: '', role: 2, unit: 'Genel Cerrahi', specialty: 'none', room: '', quotaService: 2, quotaEmergency: 0, weekendLimit: 1, offDays: [], requestedDays: [], isActive: true });
     };
 
     const handleDeleteStaff = (e: React.MouseEvent, id: string) => {
@@ -107,12 +111,12 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                 return;
             }
 
-            let targetIds: string[] = [];
-            if (bulkUnit === 'ALL') {
-                targetIds = staff.map(s => s.id);
-            } else {
-                targetIds = staff.filter(s => (s.unit || "").trim() === bulkUnit).map(s => s.id);
-            }
+            // Filter staff based on both Unit and Role
+            const targetIds = staff.filter(s => {
+                const unitMatch = bulkUnit === 'ALL' || (s.unit || "").trim() === bulkUnit;
+                const roleMatch = bulkRole === 'ALL' || s.role.toString() === bulkRole;
+                return unitMatch && roleMatch;
+            }).map(s => s.id);
 
             if (targetIds.length === 0) {
                 alert('Seçilen kriterlere uygun personel bulunamadı.');
@@ -170,7 +174,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
             {/* Manual Add Form */}
             <Card className={`p-6 border-l-4 transition-colors ${isBlackAndWhite ? '!bg-slate-900 !border-slate-800 border-l-indigo-500' : 'border-l-indigo-500'}`}>
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                    <div className="md:col-span-3">
+                    <div className="md:col-span-2">
                         <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>AD SOYAD</label>
                         <input type="text" value={newStaff.name} onChange={e => setNewStaff({...newStaff, name: e.target.value})} className={inputClass} placeholder="Hem. İsim Soyisim" />
                     </div>
@@ -203,7 +207,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                             <option value={3}>3 - Yeni/Çömez</option>
                         </select>
                     </div>
-                    <div className="md:col-span-1">
+                    <div className="md:col-span-2">
                          <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>HEDEF / HS</label>
                          <div className="flex gap-1">
                              <input type="number" value={newStaff.quotaService} onChange={e => setNewStaff({...newStaff, quotaService: parseInt(e.target.value) || 0})} className={inputClass} placeholder="Hedef" />
@@ -355,6 +359,15 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                                     <option value="ALL">TÜM BİRİMLER</option>
                                     {uniqueUnits.map(u => <option key={u} value={u}>{u}</option>)}
                                 </select>
+                            </div>
+                            <div>
+                                <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Hangi Kıdem?</label>
+                                <select value={bulkRole} onChange={e => setBulkRole(e.target.value)} className={inputClass}>
+                                    <option value="ALL">TÜM KIDEMLER</option>
+                                    <option value="1">1 - Kıdemli</option>
+                                    <option value="2">2 - Tecrübeli</option>
+                                    <option value="3">3 - Yeni/Çömez</option>
+                                </select>
                                 <div className={`text-xs mt-2 p-2 rounded ${isBlackAndWhite ? 'bg-blue-900/30 text-blue-200' : 'bg-blue-50 text-blue-700'}`}>
                                     Bu seçim <b>{affectedCount}</b> personeli etkileyecek.
                                 </div>
@@ -412,15 +425,6 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                                         <option value={3}>3 - Yeni/Çömez</option>
                                     </select>
                                 </div>
-                                <div>
-                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Grup</label>
-                                    <select value={editingStaff.group} onChange={e => setEditingStaff({...editingStaff, group: e.target.value as Group})} className={inputClass}>
-                                        <option value="A">A</option>
-                                        <option value="B">B</option>
-                                        <option value="C">C</option>
-                                        <option value="D">D</option>
-                                    </select>
-                                </div>
                                 <div className="col-span-2">
                                     <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Özellik Durumu</label>
                                     <select value={editingStaff.specialty || 'none'} onChange={e => setEditingStaff({...editingStaff, specialty: e.target.value as Specialty})} className={inputClass}>
@@ -430,12 +434,8 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                                     </select>
                                 </div>
                                 <div>
-                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Servis Hedef</label>
+                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Aylık Nöbet Hedefi</label>
                                     <input type="number" value={editingStaff.quotaService} onChange={e => setEditingStaff({...editingStaff, quotaService: parseInt(e.target.value) || 0})} className={inputClass} />
-                                </div>
-                                <div>
-                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Acil Hedef</label>
-                                    <input type="number" value={editingStaff.quotaEmergency} onChange={e => setEditingStaff({...editingStaff, quotaEmergency: parseInt(e.target.value) || 0})} className={inputClass} />
                                 </div>
                                 <div>
                                     <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Haftasonu Limit</label>

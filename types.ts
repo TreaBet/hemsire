@@ -1,6 +1,5 @@
 
 export type Role = number; // 1 (Kıdemli), 2 (Orta), 3 (Yeni/Çömez)
-export type Group = 'A' | 'B' | 'C' | 'D' | 'Genel';
 export type Specialty = 'none' | 'transplant' | 'wound';
 
 export interface Staff {
@@ -10,7 +9,6 @@ export interface Staff {
   unit: string; // Branş: 'Genel Cerrahi', 'KBB' vb.
   specialty?: Specialty; // 'none', 'transplant', 'wound'
   room: string; // Salon No / Oda No
-  group: Group; // Nöbet Grubu
   quotaService: number; // Aylık Toplam Nöbet Hedefi
   quotaEmergency: number; 
   weekendLimit: number; // Haftasonu Limiti
@@ -36,10 +34,8 @@ export interface Service {
   name: string;
   minDailyCount: number; 
   maxDailyCount: number;
-  allowedRoles: number[]; 
-  priorityRoles?: number[];
+  // allowedRoles removed
   allowedUnits?: string[]; // Sadece bu branşlar buraya yazılabilir (Boşsa herkes)
-  preferredGroup?: Group | 'Farketmez';
   isEmergency: boolean; 
 }
 
@@ -48,7 +44,6 @@ export interface ShiftAssignment {
   staffId: string;
   staffName: string;
   role: number;
-  group: Group;
   unit: string;
   isEmergency: boolean;
 }
@@ -83,4 +78,5 @@ export interface SchedulerConfig {
   randomizeOrder: boolean; 
   preventEveryOtherDay: boolean;
   unitConstraints: UnitConstraint[];
+  dailyTotalTarget: number; // GÜNLÜK TOPLAM NÖBETÇİ HEDEFİ
 }

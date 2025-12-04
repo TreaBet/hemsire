@@ -154,7 +154,6 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
             staffId: isRemoving ? 'EMPTY' : newStaffMember!.id,
             staffName: isRemoving ? 'BOŞ' : newStaffMember!.name,
             role: isRemoving ? 0 : newStaffMember!.role,
-            group: isRemoving ? 'Genel' : newStaffMember!.group
         };
 
         dayData.assignments[targetAssignmentIndex] = updatedAssignment as any;
@@ -190,7 +189,6 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                     staffId: person.id,
                     staffName: person.name,
                     role: person.role,
-                    group: person.group,
                     unit: person.unit,
                     isEmergency: service.isEmergency
                 });
@@ -221,7 +219,7 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
         
         let candidates = staff.filter(s => {
             if (assignedStaffIds.has(s.id) && s.id !== editingSlot.currentStaffId) return false;
-            if (!service.allowedRoles.includes(s.role)) return false;
+            // Removed allowed roles check
             if (s.offDays.includes(editingSlot.day)) return false;
             return true;
         });
@@ -360,7 +358,6 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
             staffId: targetAssignment.staffId,
             staffName: targetAssignment.staffName,
             role: targetAssignment.role,
-            group: targetAssignment.group
         };
 
         targetDayObj.assignments[targetIdx] = {
@@ -368,7 +365,6 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
             staffId: sourceAssignment.staffId,
             staffName: sourceAssignment.staffName,
             role: sourceAssignment.role,
-            group: sourceAssignment.group
         };
 
         recalculateStats(newSchedule);
@@ -765,7 +761,6 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                                                 <span className={`text-sm font-semibold ${isActive ? (isBlackAndWhite ? 'text-indigo-100' : 'text-indigo-800') : (isBlackAndWhite ? 'text-slate-200' : 'text-gray-700')}`}>{s.name}</span>
                                                 <div className="flex items-center gap-2 mt-0.5">
                                                      <span className={`text-[10px] px-1.5 rounded border ${isBlackAndWhite ? 'border-slate-600 text-slate-400' : 'border-gray-200 text-gray-500'}`}>KD: {s.role}</span>
-                                                     <span className={`text-[10px] ${isBlackAndWhite ? 'text-slate-500' : 'text-gray-400'}`}>{s.group} Grubu</span>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-3">

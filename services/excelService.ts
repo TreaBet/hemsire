@@ -1,6 +1,6 @@
 
 import * as XLSX from 'xlsx';
-import { ScheduleResult, Service, Staff, Group } from '../types';
+import { ScheduleResult, Service, Staff } from '../types';
 
 const formatDate = (day: number, month: number, year: number): string => {
     const d = day.toString().padStart(2, '0');
@@ -19,7 +19,7 @@ export const exportToExcel = (result: ScheduleResult, services: Service[], year:
 
   result.schedule.forEach((daySchedule) => {
     const date = new Date(year, month, daySchedule.day);
-    const dayName = date.toLocaleString('tr-TR', { weekday: 'short' });
+    const dayName = date.toLocaleString('tr-TR', { weekday: 'long' });
     const isWeekend = daySchedule.isWeekend;
 
     const row: any = {
@@ -30,7 +30,7 @@ export const exportToExcel = (result: ScheduleResult, services: Service[], year:
     services.forEach(service => {
       const assignments = daySchedule.assignments.filter(a => a.serviceId === service.id);
       if (assignments.length > 0) {
-          const names = assignments.map(a => a.staffId === 'EMPTY' ? '!!! BOŞ !!!' : a.staffName).join(', ');
+          const names = assignments.map(a => a.staffId === 'EMPTY' ? '--- BOŞ ---' : a.staffName).join(', ');
           row[service.name] = names;
       } else {
           row[service.name] = '-';
@@ -41,11 +41,19 @@ export const exportToExcel = (result: ScheduleResult, services: Service[], year:
   });
 
   const wsMain = XLSX.utils.json_to_sheet(dataMain, { header: headersMain });
-  wsMain['!cols'] = [{ wch: 12 }, { wch: 10 }, ...services.map(s => ({ wch: 30 }))];
+  wsMain['!cols'] = [{ wch: 12 }, { wch: 15 }, ...services.map(s => ({ wch: 30 }))];
   XLSX.utils.book_append_sheet(wb, wsMain, "Genel Liste");
 
-  // --- PERSONEL LİSTESİ ---
-  const daysHeader = Array.from({length: daysInMonth}, (_, i) => (i + 1).toString());
+  // --- PERSONEL LİSTESİ (Matrix) ---
+  
+  // Gün Başlıklarını Oluştur (Örn: 1 Pzt, 2 Sal)
+  const daysHeader: string[] = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(year, month, d);
+      const shortDay = date.toLocaleString('tr-TR', { weekday: 'short' });
+      daysHeader.push(`${d} ${shortDay}`);
+  }
+
   const headersPerson = ['Ad Soyad', 'Branş', 'Salon', 'Kıdem', 'Toplam', ...daysHeader];
   
   const dataPerson: any[] = [];
@@ -64,13 +72,40 @@ export const exportToExcel = (result: ScheduleResult, services: Service[], year:
       for (let d = 1; d <= daysInMonth; d++) {
           const daySchedule = result.schedule.find(s => s.day === d);
           const assignment = daySchedule?.assignments.find(a => a.staffId === person.id);
-          row[d.toString()] = assignment ? 'NÖBET' : '';
+          const headerKey = daysHeader[d-1]; // Index 0 based
+          
+          if (assignment) {
+              // Servis adını kısaltarak yaz (Örn: Genel Cerrahi -> G.Cer)
+              const service = services.find(s => s.id === assignment.serviceId);
+              let val = service ? service.name : 'NÖBET';
+              
+              // Basit kısaltmalar
+              if (val.includes('Genel Cerrahi')) val = 'G.Cer';
+              else if (val.includes('KBB')) val = 'KBB';
+              else if (val.includes('Plastik')) val = 'Plst';
+              else if (val.includes('Beyin')) val = 'Beyin';
+              else if (val.includes('Acil')) val = 'ACİL';
+              
+              row[headerKey] = val;
+          } else {
+              row[headerKey] = '';
+          }
       }
       dataPerson.push(row);
   });
 
   const wsPerson = XLSX.utils.json_to_sheet(dataPerson, { header: headersPerson });
-  wsPerson['!cols'] = [{ wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 6 }, { wch: 8 }, ...daysHeader.map(() => ({ wch: 4 }))];
+  
+  // Sütun genişliklerini ayarla
+  wsPerson['!cols'] = [
+      { wch: 20 }, // Ad Soyad
+      { wch: 15 }, // Branş
+      { wch: 8 },  // Salon
+      { wch: 6 },  // Kıdem
+      { wch: 8 },  // Toplam
+      ...daysHeader.map(() => ({ wch: 6 })) // Günler
+  ];
+  
   XLSX.utils.book_append_sheet(wb, wsPerson, "Personel Bazlı");
 
   XLSX.writeFile(wb, `Nobet_Listesi_${monthName}_${year}.xlsx`);
@@ -85,8 +120,8 @@ export const generateTemplate = () => {
             'Branş': 'Genel Cerrahi', 
             'Salon': '1',
             'Kıdem': 2, 
-            'Hedef': 7, 
-            'Haftasonu Limit': 2,
+            'Hedef': 2, 
+            'Haftasonu Limit': 1,
             'İzinler': '1,2,3',
             'İstekler': '15,20'
         }
@@ -121,10 +156,9 @@ export const readStaffFromExcel = async (file: File): Promise<Staff[]> => {
                         unit: row['Branş'] || 'Genel Cerrahi',
                         room: (row['Salon'] || '').toString(),
                         role: parseInt(row['Kıdem'] || '2'),
-                        group: 'A', // Varsayılan
-                        quotaService: parseInt(row['Hedef'] || '7'),
+                        quotaService: parseInt(row['Hedef'] || '2'),
                         quotaEmergency: 0,
-                        weekendLimit: parseInt(row['Haftasonu Limit'] || '2'),
+                        weekendLimit: parseInt(row['Haftasonu Limit'] || '1'),
                         offDays: parseList(row['İzinler']),
                         requestedDays: parseList(row['İstekler']),
                         isActive: true

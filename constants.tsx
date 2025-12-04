@@ -35,14 +35,12 @@ export const MOCK_SERVICES = [
       name: 'Genel Cerrahi Nöbeti', 
       minDailyCount: 2, 
       maxDailyCount: 2, 
-      allowedRoles: [1, 2, 3], 
       allowedUnits: ['Genel Cerrahi'], 
-      preferredGroup: 'Farketmez', 
       isEmergency: false 
   },
-  { id: 's2', name: 'KBB Nöbeti', minDailyCount: 2, maxDailyCount: 2, allowedRoles: [1, 2, 3], allowedUnits: ['KBB'], preferredGroup: 'Farketmez', isEmergency: false },
-  { id: 's3', name: 'Beyin/Ortopedi Nöbeti', minDailyCount: 1, maxDailyCount: 1, allowedRoles: [1, 2, 3], allowedUnits: ['Beyin ve Ortopedi'], preferredGroup: 'Farketmez', isEmergency: false },
-  { id: 's4', name: 'Plastik Nöbeti', minDailyCount: 1, maxDailyCount: 1, allowedRoles: [1, 2, 3], allowedUnits: ['Plastik'], preferredGroup: 'Farketmez', isEmergency: false },
+  { id: 's2', name: 'KBB Nöbeti', minDailyCount: 2, maxDailyCount: 2, allowedUnits: ['KBB'], isEmergency: false },
+  { id: 's3', name: 'Beyin/Ortopedi Nöbeti', minDailyCount: 1, maxDailyCount: 1, allowedUnits: ['Beyin ve Ortopedi'], isEmergency: false },
+  { id: 's4', name: 'Plastik Nöbeti', minDailyCount: 1, maxDailyCount: 1, allowedUnits: ['Plastik'], isEmergency: false },
 ] as const;
 
 export const DEFAULT_UNIT_CONSTRAINTS: UnitConstraint[] = [

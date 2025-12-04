@@ -231,8 +231,9 @@ body {
   @apply ring-2 ring-indigo-400 scale-[1.02] cursor-pointer shadow-md z-10;
 }
 
+/* GÜNCELLENEN KISIM: Daha sade BOŞ slot tasarımı */
 .slot-empty {
-  @apply bg-rose-50 border-rose-200 text-rose-700 font-bold border-dashed border-2;
+  @apply bg-gray-50 border-gray-300 text-gray-400 font-medium border-dashed border-2 opacity-80;
 }
 
 .slot-normal {
@@ -264,8 +265,9 @@ body {
   @apply shadow-none;
 }
 
+/* GÜNCELLENEN KISIM: Dark mode için BOŞ slot */
 .high-contrast .slot-empty {
-  @apply border-dashed border-slate-600 bg-slate-800 text-slate-400;
+  @apply border-dashed border-slate-700 bg-slate-800/40 text-slate-500;
 }
 
 .high-contrast .slot-normal {

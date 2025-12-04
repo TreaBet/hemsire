@@ -56,6 +56,7 @@ export default function App() {
   const [year, setYear] = useState(() => loadState('nobet_year', new Date().getFullYear()));
   const [randomizeDays, setRandomizeDays] = useState(() => loadState('nobet_randomize', true));
   const [preventEveryOther, setPreventEveryOther] = useState(() => loadState('nobet_preventEveryOther', true));
+  const [dailyTotalTarget, setDailyTotalTarget] = useState(() => loadState('nobet_dailyTotalTarget', 6)); // Default 6 nurses per day
   const [isBlackAndWhite, setIsBlackAndWhite] = useState(() => loadState('nobet_bw_theme', false));
 
   // --- NON-PERSISTENT STATE ---
@@ -102,6 +103,7 @@ export default function App() {
   useEffect(() => { if(!isReadOnly) localStorage.setItem('nobet_year', JSON.stringify(year)); }, [year, isReadOnly]);
   useEffect(() => { if(!isReadOnly) localStorage.setItem('nobet_randomize', JSON.stringify(randomizeDays)); }, [randomizeDays, isReadOnly]);
   useEffect(() => { if(!isReadOnly) localStorage.setItem('nobet_preventEveryOther', JSON.stringify(preventEveryOther)); }, [preventEveryOther, isReadOnly]);
+  useEffect(() => { if(!isReadOnly) localStorage.setItem('nobet_dailyTotalTarget', JSON.stringify(dailyTotalTarget)); }, [dailyTotalTarget, isReadOnly]);
   useEffect(() => { localStorage.setItem('nobet_bw_theme', JSON.stringify(isBlackAndWhite)); }, [isBlackAndWhite]); // Theme is always local pref
 
   // Ensure role configs
@@ -174,7 +176,8 @@ export default function App() {
     setTimeout(() => {
       try {
         const scheduler = new Scheduler(staff, services, {
-          year, month, maxRetries: monteCarloIters, randomizeOrder: randomizeDays, preventEveryOtherDay: preventEveryOther, unitConstraints
+          year, month, maxRetries: monteCarloIters, randomizeOrder: randomizeDays, preventEveryOtherDay: preventEveryOther, 
+          unitConstraints, dailyTotalTarget
         });
         const res = scheduler.generate();
         setResult(res);
@@ -351,7 +354,7 @@ export default function App() {
                                 </ul>
                              </div>
                              <div className="shrink-0 text-center px-4">
-                                <div className="text-3xl font-black text-indigo-500">v2.1</div>
+                                <div className="text-3xl font-black text-indigo-500">v2.2</div>
                                 <div className="text-[10px] uppercase tracking-widest opacity-60">Enterprise</div>
                              </div>
                         </div>
@@ -380,6 +383,8 @@ export default function App() {
             isBlackAndWhite={isBlackAndWhite}
             unitConstraints={unitConstraints}
             setUnitConstraints={setUnitConstraints}
+            dailyTotalTarget={dailyTotalTarget}
+            setDailyTotalTarget={setDailyTotalTarget}
           />
         )}
 
