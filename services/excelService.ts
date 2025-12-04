@@ -30,7 +30,12 @@ export const exportToExcel = (result: ScheduleResult, services: Service[], year:
     services.forEach(service => {
       const assignments = daySchedule.assignments.filter(a => a.serviceId === service.id);
       if (assignments.length > 0) {
-          const names = assignments.map(a => a.staffId === 'EMPTY' ? '--- BOŞ ---' : a.staffName).join(', ');
+          const names = assignments.map(a => {
+              if (a.staffId === 'EMPTY') return '--- BOŞ ---';
+              // Check if staff is Senior (Role 1)
+              const staffDef = staffList.find(s => s.id === a.staffId);
+              return (staffDef && staffDef.role === 1) ? `${a.staffName} (K)` : a.staffName;
+          }).join(', ');
           row[service.name] = names;
       } else {
           row[service.name] = '-';
@@ -62,7 +67,7 @@ export const exportToExcel = (result: ScheduleResult, services: Service[], year:
   sortedStaff.forEach(person => {
       const stats = result.stats.find(s => s.staffId === person.id);
       const row: any = {
-          'Ad Soyad': person.name,
+          'Ad Soyad': person.role === 1 ? `${person.name} (K)` : person.name,
           'Branş': person.unit,
           'Salon': person.room,
           'Kıdem': person.role,
@@ -157,7 +162,6 @@ export const readStaffFromExcel = async (file: File): Promise<Staff[]> => {
                         room: (row['Salon'] || '').toString(),
                         role: parseInt(row['Kıdem'] || '2'),
                         quotaService: parseInt(row['Hedef'] || '2'),
-                        quotaEmergency: 0,
                         weekendLimit: parseInt(row['Haftasonu Limit'] || '1'),
                         offDays: parseList(row['İzinler']),
                         requestedDays: parseList(row['İstekler']),

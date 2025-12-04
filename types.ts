@@ -1,16 +1,16 @@
 
+
 export type Role = number; // 1 (Kıdemli), 2 (Orta), 3 (Yeni/Çömez)
-export type Specialty = 'none' | 'transplant' | 'wound';
+export type Specialty = string; // Changed from union to string for dynamic support
 
 export interface Staff {
   id: string;
   name: string;
   role: number; // 1: Sorumlu/Kıdemli, 2: Tecrübeli, 3: Yeni Başlayan
   unit: string; // Branş: 'Genel Cerrahi', 'KBB' vb.
-  specialty?: Specialty; // 'none', 'transplant', 'wound'
+  specialty?: Specialty; // 'none', 'Transplantasyon', 'Yara Bakım' vb.
   room: string; // Salon No / Oda No
   quotaService: number; // Aylık Toplam Nöbet Hedefi
-  quotaEmergency: number; 
   weekendLimit: number; // Haftasonu Limiti
   offDays: number[]; // İzinli Günler
   requestedDays: number[]; // Nöbet İsteği
@@ -25,7 +25,6 @@ export interface UnitConstraint {
 export interface RoleConfig {
   role: number;
   quotaService: number;
-  quotaEmergency: number;
   weekendLimit: number;
 }
 
@@ -34,9 +33,7 @@ export interface Service {
   name: string;
   minDailyCount: number; 
   maxDailyCount: number;
-  // allowedRoles removed
   allowedUnits?: string[]; // Sadece bu branşlar buraya yazılabilir (Boşsa herkes)
-  isEmergency: boolean; 
 }
 
 export interface ShiftAssignment {
@@ -45,7 +42,6 @@ export interface ShiftAssignment {
   staffName: string;
   role: number;
   unit: string;
-  isEmergency: boolean;
 }
 
 export interface DaySchedule {
@@ -57,8 +53,6 @@ export interface DaySchedule {
 export interface Stats {
     staffId: string;
     totalShifts: number;
-    serviceShifts: number;
-    emergencyShifts: number;
     weekendShifts: number;
     saturdayShifts: number;
     sundayShifts: number;

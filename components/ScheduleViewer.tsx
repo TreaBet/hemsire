@@ -1,10 +1,11 @@
 
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { ScheduleResult, Service, Staff, DaySchedule } from '../types';
 import { Card, Button } from './ui';
 import { ICONS } from '../constants';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Edit3, Save, X, CheckCircle2, Share2, Clipboard, GripVertical, Pencil, RotateCcw, Search, AlertTriangle, Calendar as CalendarIcon, Download, Link as LinkIcon, AlignJustify, Users, LayoutGrid } from 'lucide-react';
+import { Edit3, Save, X, CheckCircle2, Share2, Clipboard, GripVertical, Pencil, RotateCcw, Search, AlertTriangle, Calendar as CalendarIcon, Download, Link as LinkIcon, AlignJustify, Users, LayoutGrid, Star } from 'lucide-react';
 
 interface ScheduleViewerProps {
     result: ScheduleResult;
@@ -47,12 +48,14 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
         if (!staff || !result) return [];
         return result.stats.map(s => {
           const p = staff.find(st => st.id === s.staffId);
+          // Unit (Branş) bilgisini ismin yanına ekle
+          const displayName = p ? `${p.name} (${p.unit})` : '?';
+          
           return {
-            name: p?.name || '?',
+            name: displayName,
             targetService: p?.quotaService || 0,
-            actualService: s.serviceShifts,
-            targetEmergency: p?.quotaEmergency || 0,
-            actualEmergency: s.emergencyShifts
+            actualService: s.totalShifts,
+            weekendShifts: s.weekendShifts // Haftasonu sayısını ekle
           };
         });
       }, [result, staff]);
@@ -95,12 +98,11 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
 
     const recalculateStats = (newSchedule: DaySchedule[]) => {
         const newStats = staff.map(s => {
-            let total = 0, serviceCount = 0, emergency = 0, weekend = 0, sat = 0, sun = 0;
+            let total = 0, weekend = 0, sat = 0, sun = 0;
             newSchedule.forEach(day => {
                 const assignment = day.assignments.find(a => a.staffId === s.id);
                 if(assignment) {
                     total++;
-                    if(assignment.isEmergency) emergency++; else serviceCount++;
                     const date = new Date(year, month, day.day);
                     const d = date.getDay();
                     if (d === 0 || d === 6) weekend++; 
@@ -111,8 +113,6 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
             return {
               staffId: s.id,
               totalShifts: total,
-              serviceShifts: serviceCount,
-              emergencyShifts: emergency,
               weekendShifts: weekend,
               saturdayShifts: sat,
               sundayShifts: sun
@@ -189,8 +189,7 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                     staffId: person.id,
                     staffName: person.name,
                     role: person.role,
-                    unit: person.unit,
-                    isEmergency: service.isEmergency
+                    unit: person.unit
                 });
             }
         }
@@ -246,7 +245,7 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                 const date = new Date(year, month, d.day);
                 const dayName = date.toLocaleString('tr-TR', { weekday: 'short' });
                 const assignment = d.assignments.find(a => a.staffId === staffId);
-                const role = assignment?.isEmergency ? 'Acil' : 'Servis';
+                const role = 'Servis';
                 return `${d.day} (${dayName}) - ${role}`;
             });
 
@@ -523,14 +522,13 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }} barGap={4}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isBlackAndWhite ? "#374151" : "#e5e7eb"} />
-                            <XAxis dataKey="name" tick={{fontSize: 11, fill: isBlackAndWhite ? '#d1d5db' : '#4b5563', fontWeight: 600}} interval={0} angle={-45} textAnchor="end" height={80} axisLine={false} tickLine={false} />
+                            <XAxis dataKey="name" tick={{fontSize: 10, fill: isBlackAndWhite ? '#d1d5db' : '#4b5563', fontWeight: 600}} interval={0} angle={-45} textAnchor="end" height={100} axisLine={false} tickLine={false} />
                             <YAxis tick={{ fill: isBlackAndWhite ? '#d1d5db' : '#4b5563', fontSize: 12 }} axisLine={false} tickLine={false} />
                             <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid ' + (isBlackAndWhite ? '#334155' : '#e5e7eb'), boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', padding: '12px', backgroundColor: isBlackAndWhite ? '#1e293b' : 'white', color: isBlackAndWhite ? 'white' : 'black' }} cursor={{fill: isBlackAndWhite ? '#1e293b' : '#f3f4f6'}} />
                             <Legend verticalAlign="top" iconType="circle" wrapperStyle={{paddingBottom: '20px'}}/>
-                            <Bar dataKey="targetService" name="Hedef (Srv)" fill={isBlackAndWhite ? '#4f46e5' : '#e0e7ff'} radius={[4, 4, 0, 0]} />
-                            <Bar dataKey="actualService" name="Gerçekleşen (Srv)" fill={isBlackAndWhite ? '#818cf8' : '#4f46e5'} radius={[4, 4, 0, 0]} />
-                            <Bar dataKey="targetEmergency" name="Hedef (Acil)" fill={isBlackAndWhite ? '#be123c' : '#ffe4e6'} radius={[4, 4, 0, 0]} />
-                            <Bar dataKey="actualEmergency" name="Gerçekleşen (Acil)" fill={isBlackAndWhite ? '#fb7185' : '#f43f5e'} radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="targetService" name="Hedef" fill={isBlackAndWhite ? '#4f46e5' : '#e0e7ff'} radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="actualService" name="Gerçekleşen" fill={isBlackAndWhite ? '#818cf8' : '#4f46e5'} radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="weekendShifts" name="Haftasonu" fill={isBlackAndWhite ? '#fbbf24' : '#f59e0b'} radius={[4, 4, 0, 0]} />
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
@@ -577,7 +575,6 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                                         {assignments.length > 0 ? assignments.map((a, idx) => {
                                           let badgeClass = 'slot-normal';
                                           if (a.staffId === 'EMPTY') badgeClass = 'slot-empty';
-                                          else if (a.isEmergency) badgeClass = 'slot-emergency';
                                           
                                           const isSelected = editingSlot && editingSlot.day === day.day && editingSlot.serviceId === service.id && editingSlot.currentStaffId === a.staffId;
                                           const isDraggingItem = dragData && dragData.day === day.day && dragData.serviceId === service.id && dragData.staffId === a.staffId;
@@ -599,8 +596,9 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                                               }}
                                             >
                                               <div className="flex items-center gap-2 overflow-hidden w-full">
-                                                 <div className={`dot w-1.5 h-1.5 rounded-full shrink-0 ${a.isEmergency ? 'bg-white' : (isBlackAndWhite ? 'bg-indigo-400' : 'bg-indigo-500')}`}></div>
+                                                 <div className={`dot w-1.5 h-1.5 rounded-full shrink-0 ${isBlackAndWhite ? 'bg-indigo-400' : 'bg-indigo-500'}`}></div>
                                                  <span className="font-semibold block truncate text-sm select-none">{a.staffName}</span>
+                                                 {a.role === 1 && <Star className="w-3 h-3 text-amber-500 fill-amber-500 ml-1 shrink-0" />}
                                               </div>
                                               {isEditing && (
                                                   <div className="flex items-center gap-1 absolute right-1">
@@ -642,7 +640,10 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                             {sortedStaff.map(person => (
                                 <tr key={person.id}>
                                     <td className={`sticky-col p-2 border-r ${isBlackAndWhite ? 'bg-slate-900 border-slate-700 text-slate-200' : 'border-gray-200'}`}>
-                                        <div className="font-bold text-sm truncate" title={person.name}>{person.name}</div>
+                                        <div className="font-bold text-sm truncate flex items-center gap-1" title={person.name}>
+                                            {person.name}
+                                            {person.role === 1 && <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />}
+                                        </div>
                                         <div className="text-[10px] opacity-60 truncate">{person.unit}</div>
                                     </td>
                                     {result.schedule.map(day => {
@@ -660,9 +661,7 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                                             // Shorten service name
                                             const shortName = serviceName.length > 8 ? serviceName.substring(0, 6) + '..' : serviceName;
                                             
-                                            const bgColor = assignment.isEmergency 
-                                                ? (isBlackAndWhite ? 'bg-red-900/50 text-red-200 border-red-900' : 'bg-red-100 text-red-800 border-red-200')
-                                                : (isBlackAndWhite ? 'bg-indigo-900/50 text-indigo-200 border-indigo-900' : 'bg-indigo-50 text-indigo-800 border-indigo-200');
+                                            const bgColor = isBlackAndWhite ? 'bg-indigo-900/50 text-indigo-200 border-indigo-900' : 'bg-indigo-50 text-indigo-800 border-indigo-200';
 
                                             content = (
                                                 <div className={`text-[10px] font-bold text-center py-1 px-0.5 rounded border leading-tight ${bgColor}`} title={serviceName}>
@@ -758,7 +757,10 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                                             className={`w-full px-3 py-2.5 text-left rounded-lg flex justify-between items-center transition-all group ${dropdownItemClasses(isActive)}`}
                                         >
                                             <div className="flex flex-col">
-                                                <span className={`text-sm font-semibold ${isActive ? (isBlackAndWhite ? 'text-indigo-100' : 'text-indigo-800') : (isBlackAndWhite ? 'text-slate-200' : 'text-gray-700')}`}>{s.name}</span>
+                                                <span className={`text-sm font-semibold flex items-center gap-1 ${isActive ? (isBlackAndWhite ? 'text-indigo-100' : 'text-indigo-800') : (isBlackAndWhite ? 'text-slate-200' : 'text-gray-700')}`}>
+                                                    {s.name}
+                                                    {s.role === 1 && <Star className="w-3 h-3 text-amber-500 fill-amber-500" />}
+                                                </span>
                                                 <div className="flex items-center gap-2 mt-0.5">
                                                      <span className={`text-[10px] px-1.5 rounded border ${isBlackAndWhite ? 'border-slate-600 text-slate-400' : 'border-gray-200 text-gray-500'}`}>KD: {s.role}</span>
                                                 </div>
@@ -844,7 +846,10 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                             <div className="space-y-2">
                                 {staff.map(s => (
                                     <div key={s.id} className={`flex justify-between items-center p-3 border rounded-xl transition-colors ${isBlackAndWhite ? 'border-slate-700 hover:bg-slate-800' : 'border-gray-200 hover:bg-gray-50'}`}>
-                                        <span className="font-bold text-sm truncate mr-2">{s.name}</span>
+                                        <div className="font-bold text-sm truncate mr-2 flex items-center gap-1">
+                                            {s.name}
+                                            {s.role === 1 && <Star className="w-3 h-3 text-amber-500 fill-amber-500" />}
+                                        </div>
                                         <div className="flex gap-2">
                                             {/* Button bileşeni 'title' prop'unu desteklemediği için kapsayıcı div'e 'title' verildi */}
                                             <div title="Takvime Ekle">

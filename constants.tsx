@@ -28,19 +28,16 @@ export const MOCK_STAFF = [] as const;
 
 export const MOCK_SERVICES = [
   // Genel Cerrahi: Min 2, Max 2.
-  // Artık 'Transplantasyon' ve 'Yara' ayrı birim olarak değil, Genel Cerrahi içindeki 'Özellik' olarak yönetiliyor.
-  // Bu yüzden allowedUnits sadece 'Genel Cerrahi' içeriyor.
   { 
       id: 's1', 
       name: 'Genel Cerrahi Nöbeti', 
       minDailyCount: 2, 
       maxDailyCount: 2, 
-      allowedUnits: ['Genel Cerrahi'], 
-      isEmergency: false 
+      allowedUnits: ['Genel Cerrahi']
   },
-  { id: 's2', name: 'KBB Nöbeti', minDailyCount: 2, maxDailyCount: 2, allowedUnits: ['KBB'], isEmergency: false },
-  { id: 's3', name: 'Beyin/Ortopedi Nöbeti', minDailyCount: 1, maxDailyCount: 1, allowedUnits: ['Beyin ve Ortopedi'], isEmergency: false },
-  { id: 's4', name: 'Plastik Nöbeti', minDailyCount: 1, maxDailyCount: 1, allowedUnits: ['Plastik'], isEmergency: false },
+  { id: 's2', name: 'KBB Nöbeti', minDailyCount: 2, maxDailyCount: 2, allowedUnits: ['KBB'] },
+  { id: 's3', name: 'Beyin/Ortopedi Nöbeti', minDailyCount: 1, maxDailyCount: 1, allowedUnits: ['Beyin ve Ortopedi'] },
+  { id: 's4', name: 'Plastik Nöbeti', minDailyCount: 1, maxDailyCount: 1, allowedUnits: ['Plastik'] },
 ] as const;
 
 export const DEFAULT_UNIT_CONSTRAINTS: UnitConstraint[] = [

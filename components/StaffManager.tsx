@@ -1,8 +1,9 @@
 
+
 import React, { useState, useRef, useMemo } from 'react';
 import { Staff, RoleConfig, Specialty } from '../types';
 import { Card, Button, DateSelectModal } from './ui';
-import { RefreshCw, FileJson, Upload, CheckCircle2, Circle, Stethoscope, DoorOpen, Layers, X, UserPlus, Trash2, Users, AlertCircle, Star, Pencil } from 'lucide-react';
+import { RefreshCw, FileJson, Upload, CheckCircle2, Circle, Stethoscope, DoorOpen, Layers, X, UserPlus, Trash2, Users, AlertCircle, Star, Pencil, Settings2, Plus } from 'lucide-react';
 
 interface StaffManagerProps {
     staff: Staff[];
@@ -16,17 +17,23 @@ interface StaffManagerProps {
     handleExportBackup: () => void;
     isBlackAndWhite: boolean;
     daysInMonth: number;
+    // Dynamic Metadata
+    customUnits: string[];
+    setCustomUnits: React.Dispatch<React.SetStateAction<string[]>>;
+    customSpecialties: string[];
+    setCustomSpecialties: React.Dispatch<React.SetStateAction<string[]>>;
 }
 
 export const StaffManager: React.FC<StaffManagerProps> = ({
     staff, setStaff, roleConfigs, setRoleConfigs,
     handleResetData, handleFileUpload, generateTemplate,
-    handleImportBackup, handleExportBackup, isBlackAndWhite, daysInMonth
+    handleImportBackup, handleExportBackup, isBlackAndWhite, daysInMonth,
+    customUnits, setCustomUnits, customSpecialties, setCustomSpecialties
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const backupInputRef = useRef<HTMLInputElement>(null);
     const [newStaff, setNewStaff] = useState<Partial<Staff>>({ 
-        name: '', role: 2, unit: 'Genel Cerrahi', specialty: 'none', room: '', quotaService: 2, quotaEmergency: 0, weekendLimit: 1, offDays: [], requestedDays: [], isActive: true
+        name: '', role: 2, unit: customUnits[0] || 'Genel Cerrahi', specialty: 'none', room: '', quotaService: 2, weekendLimit: 1, offDays: [], requestedDays: [], isActive: true
     });
 
     const [dateModal, setDateModal] = useState<{ isOpen: boolean, staffId: string, type: 'off' | 'request' } | null>(null);
@@ -40,12 +47,17 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
     const [bulkRole, setBulkRole] = useState<string>('ALL'); // Default to ALL
     const [bulkQuota, setBulkQuota] = useState<string>('2'); 
     const [bulkWeekend, setBulkWeekend] = useState<string>('1'); 
+    
+    // Metadata Edit State
+    const [showMetaModal, setShowMetaModal] = useState(false);
+    const [newUnitName, setNewUnitName] = useState('');
+    const [newSpecialtyName, setNewSpecialtyName] = useState('');
 
-    // Extract unique units for dropdown, normalize spaces
+    // Extract unique units for dropdown (Combined with custom units to ensure all are shown)
     const uniqueUnits = useMemo(() => {
-        const units = new Set(staff.map(s => (s.unit || "").trim()));
-        return Array.from(units).filter((u: string) => u.length > 0).sort();
-    }, [staff]);
+        // Just use the passed customUnits which should be the source of truth
+        return customUnits;
+    }, [customUnits]);
 
     // Calculate affected staff count for preview based on EXACT match or ALL
     const affectedCount = useMemo(() => {
@@ -59,7 +71,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
     const handleAddStaff = () => {
         if (!newStaff.name) return;
         setStaff(prev => [...prev, { ...newStaff, id: Date.now().toString(), isActive: true } as Staff]);
-        setNewStaff({ name: '', role: 2, unit: 'Genel Cerrahi', specialty: 'none', room: '', quotaService: 2, quotaEmergency: 0, weekendLimit: 1, offDays: [], requestedDays: [], isActive: true });
+        setNewStaff({ name: '', role: 2, unit: customUnits[0] || 'Genel Cerrahi', specialty: 'none', room: '', quotaService: 2, weekendLimit: 1, offDays: [], requestedDays: [], isActive: true });
     };
 
     const handleDeleteStaff = (e: React.MouseEvent, id: string) => {
@@ -99,6 +111,33 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
             }
             return s;
         }));
+    };
+    
+    // Metadata Management Handlers
+    const addUnit = () => {
+        if(!newUnitName.trim()) return;
+        if(customUnits.includes(newUnitName.trim())) { alert('Bu birim zaten var.'); return; }
+        setCustomUnits([...customUnits, newUnitName.trim()]);
+        setNewUnitName('');
+    };
+
+    const removeUnit = (name: string) => {
+        if(window.confirm(`${name} birimini silmek istediğinize emin misiniz?`)) {
+            setCustomUnits(customUnits.filter(u => u !== name));
+        }
+    };
+
+    const addSpecialty = () => {
+        if(!newSpecialtyName.trim()) return;
+        if(customSpecialties.includes(newSpecialtyName.trim())) { alert('Bu özellik zaten var.'); return; }
+        setCustomSpecialties([...customSpecialties, newSpecialtyName.trim()]);
+        setNewSpecialtyName('');
+    };
+
+    const removeSpecialty = (name: string) => {
+         if(window.confirm(`${name} özelliğini silmek istediğinize emin misiniz?`)) {
+            setCustomSpecialties(customSpecialties.filter(s => s !== name));
+        }
     };
 
     const applyBulkUpdate = () => {
@@ -155,6 +194,10 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
               <div className="flex flex-wrap gap-2 w-full xl:w-auto justify-start xl:justify-end">
                  <input type="file" ref={backupInputRef} accept=".json" onChange={handleImportBackup} className="hidden" />
                  
+                 <Button variant="secondary" onClick={() => setShowMetaModal(true)} className={`text-xs px-3 ${isBlackAndWhite ? '!bg-slate-800 text-white !border-slate-700 hover:!bg-slate-700' : ''}`}>
+                    <Settings2 className="w-3.5 h-3.5" /> Ayarlar (Birim/Özellik)
+                 </Button>
+
                  <Button variant="secondary" onClick={() => setShowBulkModal(true)} className={`text-xs px-3 ${isBlackAndWhite ? '!bg-slate-800 text-white !border-slate-700 hover:!bg-slate-700' : ''}`}>
                     <Layers className="w-3.5 h-3.5" /> Toplu Düzenle
                  </Button>
@@ -181,18 +224,14 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                     <div className="md:col-span-2">
                         <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>BRANŞ</label>
                         <select value={newStaff.unit} onChange={e => setNewStaff({...newStaff, unit: e.target.value})} className={inputClass}>
-                            <option value="Genel Cerrahi">Genel Cerrahi</option>
-                            <option value="KBB">KBB</option>
-                            <option value="Beyin ve Ortopedi">Beyin ve Ortopedi</option>
-                            <option value="Plastik">Plastik</option>
+                            {customUnits.map(u => <option key={u} value={u}>{u}</option>)}
                         </select>
                     </div>
                     <div className="md:col-span-2">
                         <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>ÖZELLİK DURUMU</label>
                         <select value={newStaff.specialty} onChange={e => setNewStaff({...newStaff, specialty: e.target.value as Specialty})} className={inputClass}>
                             <option value="none">Özellik Yok (Normal)</option>
-                            <option value="transplant">Transplantasyon</option>
-                            <option value="wound">Yara Bakım</option>
+                            {customSpecialties.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                     </div>
                     <div className="md:col-span-1">
@@ -295,16 +334,16 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                         {/* SPECIALTY BADGE */}
                         {person.specialty && person.specialty !== 'none' && (
                             <div className={`mb-3 ml-8 text-xs font-bold px-2 py-1 rounded inline-flex items-center gap-1 ${
-                                person.specialty === 'transplant' 
+                                person.specialty === 'Transplantasyon' 
                                 ? (isBlackAndWhite ? 'bg-purple-900/50 text-purple-200 border border-purple-800' : 'bg-purple-100 text-purple-700 border border-purple-200')
                                 : (isBlackAndWhite ? 'bg-orange-900/50 text-orange-200 border border-orange-800' : 'bg-orange-100 text-orange-700 border border-orange-200')
                             }`}>
                                 <Star className="w-3 h-3" />
-                                {person.specialty === 'transplant' ? 'Transplantasyon' : 'Yara Bakım'}
+                                {person.specialty}
                             </div>
                         )}
 
-                        <div className={`grid grid-cols-3 gap-2 text-center text-xs p-2 rounded-lg mb-4 ${isBlackAndWhite ? 'bg-slate-800' : 'bg-white shadow-sm border border-gray-100'}`}>
+                        <div className={`grid grid-cols-2 gap-2 text-center text-xs p-2 rounded-lg mb-4 ${isBlackAndWhite ? 'bg-slate-800' : 'bg-white shadow-sm border border-gray-100'}`}>
                              <div>
                                  <div className={`font-bold ${person.isActive !== false ? 'text-indigo-500' : 'text-gray-400'}`}>{person.quotaService}</div>
                                  <div className="opacity-60">Hedef</div>
@@ -312,10 +351,6 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                              <div>
                                  <div className={`font-bold ${person.isActive !== false ? 'text-rose-500' : 'text-gray-400'}`}>{person.weekendLimit}</div>
                                  <div className="opacity-60">HS Limit</div>
-                             </div>
-                             <div>
-                                 <div className={`font-bold ${person.isActive !== false ? 'text-purple-500' : 'text-gray-400'}`}>{person.role === 1 ? 'Kıdemli' : (person.role === 2 ? 'Tecrübeli' : 'Yeni')}</div>
-                                 <div className="opacity-60">Seviye</div>
                              </div>
                         </div>
 
@@ -344,6 +379,74 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                 />
             )}
 
+            {/* Metadata (Units & Specialties) Manager Modal */}
+            {showMetaModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                     <div className={`bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-scale-in border ${isBlackAndWhite ? '!bg-slate-900 !border-slate-800 text-white' : 'border-gray-200'}`}>
+                        <div className={`p-4 border-b flex justify-between items-center ${isBlackAndWhite ? 'bg-slate-800 border-slate-700' : 'bg-gray-50 border-gray-100'}`}>
+                            <h3 className="font-bold text-lg">Birim & Özellik Ayarları</h3>
+                            <button onClick={() => setShowMetaModal(false)} className="p-1 rounded-full hover:bg-black/10"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8 max-h-[70vh] overflow-y-auto">
+                            
+                            {/* UNITS SECTION */}
+                            <div>
+                                <h4 className="font-bold text-sm uppercase mb-3 text-indigo-500">Birimler (Branşlar)</h4>
+                                <div className="flex gap-2 mb-4">
+                                    <input 
+                                        type="text" 
+                                        value={newUnitName} 
+                                        onChange={(e) => setNewUnitName(e.target.value)}
+                                        placeholder="Yeni birim adı..."
+                                        className={inputClass}
+                                    />
+                                    <Button onClick={addUnit} disabled={!newUnitName} className="px-3">
+                                        <Plus className="w-4 h-4"/>
+                                    </Button>
+                                </div>
+                                <div className={`border rounded-lg overflow-hidden ${isBlackAndWhite ? 'border-slate-700' : 'border-gray-200'}`}>
+                                    {customUnits.map(unit => (
+                                        <div key={unit} className={`flex justify-between items-center p-2.5 text-sm border-b last:border-0 ${isBlackAndWhite ? 'border-slate-700 bg-slate-800' : 'border-gray-100 bg-white'}`}>
+                                            <span>{unit}</span>
+                                            <button onClick={() => removeUnit(unit)} className="text-red-400 hover:text-red-600 p-1"><X className="w-3.5 h-3.5"/></button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* SPECIALTIES SECTION */}
+                            <div>
+                                <h4 className="font-bold text-sm uppercase mb-3 text-purple-500">Özellikler (Sertifikalar)</h4>
+                                <div className="flex gap-2 mb-4">
+                                    <input 
+                                        type="text" 
+                                        value={newSpecialtyName} 
+                                        onChange={(e) => setNewSpecialtyName(e.target.value)}
+                                        placeholder="Yeni özellik adı..."
+                                        className={inputClass}
+                                    />
+                                    <Button onClick={addSpecialty} disabled={!newSpecialtyName} className="px-3">
+                                        <Plus className="w-4 h-4"/>
+                                    </Button>
+                                </div>
+                                <div className={`border rounded-lg overflow-hidden ${isBlackAndWhite ? 'border-slate-700' : 'border-gray-200'}`}>
+                                    {customSpecialties.map(spec => (
+                                        <div key={spec} className={`flex justify-between items-center p-2.5 text-sm border-b last:border-0 ${isBlackAndWhite ? 'border-slate-700 bg-slate-800' : 'border-gray-100 bg-white'}`}>
+                                            <span>{spec}</span>
+                                            <button onClick={() => removeSpecialty(spec)} className="text-red-400 hover:text-red-600 p-1"><X className="w-3.5 h-3.5"/></button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                        </div>
+                        <div className={`p-4 border-t flex justify-end gap-3 ${isBlackAndWhite ? 'bg-slate-800 border-slate-700' : 'bg-gray-50 border-gray-100'}`}>
+                            <Button onClick={() => setShowMetaModal(false)}>Tamam</Button>
+                        </div>
+                     </div>
+                </div>
+            )}
+
             {/* Bulk Edit Modal */}
             {showBulkModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
@@ -357,7 +460,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                                 <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Hangi Birim?</label>
                                 <select value={bulkUnit} onChange={e => setBulkUnit(e.target.value)} className={inputClass}>
                                     <option value="ALL">TÜM BİRİMLER</option>
-                                    {uniqueUnits.map(u => <option key={u} value={u}>{u}</option>)}
+                                    {customUnits.map(u => <option key={u} value={u}>{u}</option>)}
                                 </select>
                             </div>
                             <div>
@@ -405,13 +508,9 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                                 </div>
                                 <div>
                                     <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Branş</label>
-                                    <input type="text" value={editingStaff.unit} onChange={e => setEditingStaff({...editingStaff, unit: e.target.value})} className={inputClass} list="unit-suggestions" />
-                                    <datalist id="unit-suggestions">
-                                        <option value="Genel Cerrahi" />
-                                        <option value="KBB" />
-                                        <option value="Beyin ve Ortopedi" />
-                                        <option value="Plastik" />
-                                    </datalist>
+                                    <select value={editingStaff.unit} onChange={e => setEditingStaff({...editingStaff, unit: e.target.value})} className={inputClass}>
+                                         {customUnits.map(u => <option key={u} value={u}>{u}</option>)}
+                                    </select>
                                 </div>
                                 <div>
                                     <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Salon</label>
@@ -429,8 +528,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                                     <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Özellik Durumu</label>
                                     <select value={editingStaff.specialty || 'none'} onChange={e => setEditingStaff({...editingStaff, specialty: e.target.value as Specialty})} className={inputClass}>
                                         <option value="none">Özellik Yok (Normal)</option>
-                                        <option value="transplant">Transplantasyon</option>
-                                        <option value="wound">Yara Bakım</option>
+                                        {customSpecialties.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                 </div>
                                 <div>

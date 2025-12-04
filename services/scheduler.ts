@@ -1,11 +1,12 @@
 
+
 import { Staff, Service, DaySchedule, SchedulerConfig, ScheduleResult, ShiftAssignment } from '../types';
 
 interface CandidateOptions {
     desperate?: boolean;
     restrictRole?: number;
     excludeRole?: number;
-    restrictSpecialty?: string; // New: Force a specific specialty (transplant/wound)
+    restrictSpecialty?: string; // New: Force a specific specialty (Exact String Match)
 }
 
 export class Scheduler {
@@ -72,8 +73,8 @@ export class Scheduler {
       // If a specialty is ONLY allowed on this day, it's a hard day.
       const constraints = this.config.unitConstraints.filter(c => c.allowedDays.includes(dow));
       
-      if (constraints.some(c => c.unit === 'Transplantasyon')) return 100; // Hardest
-      if (constraints.some(c => c.unit === 'Yara Bakım')) return 90; // Hard
+      // Use dynamic checks if needed, but for now hardcoded difficulty is simple
+      // We can make this dynamic later if needed
       
       if (dow === 6) return 80;  // Saturday
       if (dow === 0) return 60;  // Sunday
@@ -115,7 +116,7 @@ export class Scheduler {
       const totalDeviation = currentResult.stats.reduce((acc, s) => {
         const staffDef = this.staff.find(st => st.id === s.staffId);
         if (!staffDef) return acc;
-        return acc + Math.abs(staffDef.quotaService - s.serviceShifts);
+        return acc + Math.abs(staffDef.quotaService - s.totalShifts);
       }, 0);
 
       if (currentResult.unfilledSlots < minUnfilled) {
@@ -142,8 +143,8 @@ export class Scheduler {
     const dayAssignmentsMap = new Map<number, ShiftAssignment[]>();
     for(let d=1; d<=this.daysInMonth; d++) dayAssignmentsMap.set(d, []);
 
-    const staffStats = new Map<string, { total: number, service: number, emergency: number, weekend: number, saturday: number, sunday: number }>();
-    this.staff.forEach(s => staffStats.set(s.id, { total: 0, service: 0, emergency: 0, weekend: 0, saturday: 0, sunday: 0 }));
+    const staffStats = new Map<string, { total: number, weekend: number, saturday: number, sunday: number }>();
+    this.staff.forEach(s => staffStats.set(s.id, { total: 0, weekend: 0, saturday: 0, sunday: 0 }));
 
     let unfilledSlots = 0;
     let daysToProcess = Array.from({length: this.daysInMonth}, (_, i) => i + 1);
@@ -158,215 +159,243 @@ export class Scheduler {
     } else {
         daysToProcess.sort((a, b) => this.getDayDifficulty(b) - this.getDayDifficulty(a));
     }
+    
+    // HELPER: Assign a staff member to a service and update stats
+    const assignToSlot = (day: number, candidate: Staff, service: Service) => {
+        const currentDayAssignments = dayAssignmentsMap.get(day)!;
+        const dayOfWeek = this.getDayOfWeek(day);
+        const isWeekend = dayOfWeek === 6 || dayOfWeek === 0;
+        const isSat = dayOfWeek === 6;
+        const isSun = dayOfWeek === 0;
 
+        currentDayAssignments.push({
+            serviceId: service.id,
+            staffId: candidate.id,
+            staffName: candidate.name,
+            role: candidate.role,
+            unit: candidate.unit
+        });
+        
+        const stats = staffStats.get(candidate.id)!;
+        stats.total++;
+        if (isWeekend) stats.weekend++;
+        if (isSat) stats.saturday++;
+        if (isSun) stats.sunday++;
+    };
+
+    // Helper to get day context
+    const getContext = (day: number) => {
+        const dayOfWeek = this.getDayOfWeek(day);
+        return {
+            isWeekend: dayOfWeek === 6 || dayOfWeek === 0,
+            isSat: dayOfWeek === 6,
+            isSun: dayOfWeek === 0,
+            isFri: dayOfWeek === 5,
+            assignedTodayIds: new Set(dayAssignmentsMap.get(day)!.map(a => a.staffId))
+        };
+    };
+
+    // =========================================================================
+    // NEW LOGIC: GLOBAL LAYERING
+    // Instead of filling a day completely, we fill Layer 1 for ALL days, then Layer 2, etc.
+    // =========================================================================
+
+    // --- PHASE 0: PRIORITY SPECIALTY ASSIGNMENT (Global Pass) ---
+    // This MUST happen before anything else to ensure special staff get their restricted days.
     for (const day of daysToProcess) {
-      const dayOfWeek = this.getDayOfWeek(day);
-      const isWeekend = dayOfWeek === 6 || dayOfWeek === 0;
-      const isSat = dayOfWeek === 6;
-      const isSun = dayOfWeek === 0;
-      const isFri = dayOfWeek === 5;
+        const { isWeekend, isSat, isSun, isFri, assignedTodayIds } = getContext(day);
+        const dayOfWeek = this.getDayOfWeek(day);
+        const currentDayAssignments = dayAssignmentsMap.get(day)!;
 
-      const currentDayAssignments = dayAssignmentsMap.get(day)!;
-      const assignedTodayIds = new Set<string>();
-      let seniorAssignedToday = false;
+        for (const constraint of this.config.unitConstraints) {
+            if (constraint.allowedDays.includes(dayOfWeek)) {
+                 const targetSpecialty = constraint.unit.trim();
+                 const specialists = this.staff.filter(s => s.specialty && s.specialty.trim() === targetSpecialty);
 
-      // HELPER: Assign a staff member to a service and update stats
-      const assignToSlot = (candidate: Staff, service: Service) => {
-          currentDayAssignments.push({
-              serviceId: service.id,
-              staffId: candidate.id,
-              staffName: candidate.name,
-              role: candidate.role,
-              unit: candidate.unit,
-              isEmergency: service.isEmergency
-          });
-          assignedTodayIds.add(candidate.id);
-          
-          const stats = staffStats.get(candidate.id)!;
-          stats.total++;
-          stats.service++;
-          if (isWeekend) stats.weekend++;
-          if (isSat) stats.saturday++;
-          if (isSun) stats.sunday++;
+                 if (specialists.length > 0) {
+                     const alreadyAssigned = currentDayAssignments.some(a => {
+                         const s = this.staff.find(st => st.id === a.staffId);
+                         return s?.specialty?.trim() === targetSpecialty;
+                     });
 
-          if (candidate.role === 1) seniorAssignedToday = true;
-      };
+                     if (!alreadyAssigned) {
+                         const eligibleServices = [...this.services]
+                              .filter(s => s.minDailyCount > 0)
+                              .sort((a, b) => {
+                                  const aAllows = a.allowedUnits?.some(u => u.trim() === targetSpecialty) ? 1 : 0;
+                                  const bAllows = b.allowedUnits?.some(u => u.trim() === targetSpecialty) ? 1 : 0;
+                                  if (aAllows !== bAllows) return bAllows - aAllows;
+                                  return this.getServiceDifficulty(b) - this.getServiceDifficulty(a)
+                              });
 
-      // --- PHASE 0: PRIORITY SPECIALTY ASSIGNMENT ---
-      // Önce özellikli günlerin (Transplant/Yara vb.) zorunlu personelini ata.
-      // Bu personel boşta varsa ve bugün o özelliğin günü ise, 1 boşluğa kesin o yazılır.
-      for (const constraint of this.config.unitConstraints) {
-          if (constraint.allowedDays.includes(dayOfWeek)) {
-               let targetSpecialty: string | undefined = undefined;
-               if (constraint.unit === 'Transplantasyon') targetSpecialty = 'transplant';
-               if (constraint.unit === 'Yara Bakım') targetSpecialty = 'wound';
+                         for (const service of eligibleServices) {
+                             const currentCount = currentDayAssignments.filter(a => a.serviceId === service.id).length;
+                             if (currentCount >= service.maxDailyCount) continue;
 
-               if (targetSpecialty) {
-                   // Check if we already have this specialist assigned (unlikely at start of day loop)
-                   const alreadyAssigned = currentDayAssignments.some(a => {
-                       const s = this.staff.find(st => st.id === a.staffId);
-                       return s?.specialty === targetSpecialty;
-                   });
+                             const specialistCandidate = this.findBestCandidate(
+                                 service, day, assignedTodayIds, dayAssignmentsMap, staffStats,
+                                 isWeekend, isSat, isSun, isFri,
+                                 { restrictSpecialty: targetSpecialty }
+                             );
 
-                   if (!alreadyAssigned) {
-                       // Find a service that needs people and is compatible
-                       // We prioritize 'Genel Cerrahi' type services or services allowing all units
-                       const eligibleServices = [...this.services]
-                            .filter(s => s.minDailyCount > 0)
-                            .sort((a, b) => this.getServiceDifficulty(b) - this.getServiceDifficulty(a));
-
-                       for (const service of eligibleServices) {
-                           // Try to find the specific specialist for this service
-                           const specialistCandidate = this.findBestCandidate(
-                               service, day, assignedTodayIds, dayAssignmentsMap, staffStats,
-                               isWeekend, isSat, isSun, isFri,
-                               { restrictSpecialty: targetSpecialty } // STRICTLY find this specialty
-                           );
-
-                           if (specialistCandidate) {
-                               assignToSlot(specialistCandidate, service);
-                               break; // Found and assigned the specialist for this constraint
-                           }
-                       }
-                   }
-               }
-          }
-      }
-
-      // --- PHASE 1: ASSIGN 1 SENIOR (ROLE 1) GLOBALLY ---
-      // Only if not assigned in Phase 0
-      if (!seniorAssignedToday) {
-          const shuffledServicesForSenior = [...this.services].sort(() => Math.random() - 0.5);
-          for (const service of shuffledServicesForSenior) {
-              if (seniorAssignedToday) break; 
-              
-              if (service.minDailyCount <= 0) continue;
-              
-              // Check if service is already full (due to Phase 0)
-              const count = currentDayAssignments.filter(a => a.serviceId === service.id).length;
-              if (count >= service.minDailyCount) continue;
-
-              const seniorCandidate = this.findBestCandidate(
-                  service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
-                  isWeekend, isSat, isSun, isFri, 
-                  { restrictRole: 1 } 
-              );
-
-              if (seniorCandidate) {
-                 assignToSlot(seniorCandidate, service);
-              }
-          }
-      }
-
-      // --- PHASE 2: FILL REMAINING SLOTS (MINIMUMS) ---
-      const dailyServices = [...this.services].sort((a, b) => this.getServiceDifficulty(b) - this.getServiceDifficulty(a));
-
-      for (const service of dailyServices) {
-        let currentServiceCount = currentDayAssignments.filter(a => a.serviceId === service.id).length;
-
-        for (let i = currentServiceCount; i < service.minDailyCount; i++) {
-          
-          // 1. Normal Try
-          let bestCandidate = this.findBestCandidate(
-              service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
-              isWeekend, isSat, isSun, isFri, 
-              { 
-                  excludeRole: seniorAssignedToday ? 1 : undefined,
-              } 
-          );
-
-          // 2. Desperate Try (Relax soft constraints)
-          if (!bestCandidate && currentServiceCount < service.minDailyCount) {
-              bestCandidate = this.findBestCandidate(
-                  service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
-                  isWeekend, isSat, isSun, isFri, 
-                  { 
-                      desperate: true,
-                      excludeRole: seniorAssignedToday ? 1 : undefined
-                  }
-              );
-          }
-
-          if (bestCandidate) {
-            assignToSlot(bestCandidate, service);
-            currentServiceCount++;
-          } else {
-             if (currentDayAssignments.filter(a => a.serviceId === service.id).length < service.minDailyCount) {
-                 unfilledSlots++;
-                 currentDayAssignments.push({
-                    serviceId: service.id,
-                    staffId: 'EMPTY',
-                    staffName: `BOŞ (Min:${service.minDailyCount})`,
-                    role: 0,
-                    unit: '-',
-                    isEmergency: service.isEmergency
-                 });
-             }
-          }
+                             if (specialistCandidate) {
+                                 assignToSlot(day, specialistCandidate, service);
+                                 assignedTodayIds.add(specialistCandidate.id);
+                                 break;
+                             }
+                         }
+                     }
+                 }
+            }
         }
-      }
-      
-      // --- PHASE 3: FILL TO GLOBAL TARGET (MAX BALANCE) ---
-      // If we met minimums, but haven't reached the daily target count (e.g. 6),
-      // we fill flexible services (where current < max)
-      // We prioritize services that have the most potential candidates (e.g. General Surgery)
-      
-      let currentTotalStaff = currentDayAssignments.filter(a => a.staffId !== 'EMPTY').length;
-      
-      if (this.config.dailyTotalTarget > 0 && currentTotalStaff < this.config.dailyTotalTarget) {
-          
-          // Loop until target met or no more fills possible
-          let protectionCounter = 0;
-          while (currentTotalStaff < this.config.dailyTotalTarget && protectionCounter < 50) {
-              protectionCounter++;
-              
-              // Find services that have room (current < max)
-              const flexibleServices = this.services.filter(s => {
-                  const currentCount = currentDayAssignments.filter(a => a.serviceId === s.id).length;
-                  return currentCount < s.maxDailyCount;
-              });
-              
-              if (flexibleServices.length === 0) break; // All maxed out
-              
-              // Sort by "Easiest to Fill" (Largest candidate pool)
-              // This ensures we fill General Surgery (usually large pool) before niche areas
-              flexibleServices.sort((a, b) => this.getPotentialCandidatesCount(b) - this.getPotentialCandidatesCount(a));
-              
-              let filledSomething = false;
-              
-              for (const service of flexibleServices) {
-                  // Try to find one person for this service
-                   let extraCandidate = this.findBestCandidate(
-                      service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
-                      isWeekend, isSat, isSun, isFri, 
-                      { 
-                          excludeRole: seniorAssignedToday ? 1 : undefined,
-                      } 
-                  );
-                  
-                  // Desperate try for extra slot? Yes, why not, if we need to hit target.
-                  if (!extraCandidate) {
-                      extraCandidate = this.findBestCandidate(
-                          service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
-                          isWeekend, isSat, isSun, isFri, 
-                          { 
-                              desperate: true,
-                              excludeRole: seniorAssignedToday ? 1 : undefined
-                          }
-                      );
-                  }
+    }
 
-                  if (extraCandidate) {
-                      assignToSlot(extraCandidate, service);
-                      currentTotalStaff++;
-                      filledSomething = true;
-                      break; // Break inner loop to re-evaluate flexibleServices list and counts
+    // --- PHASE 1: ASSIGN 1 SENIOR (Global Pass) ---
+    // Ensures every day has at least 1 Senior if possible.
+    for (const day of daysToProcess) {
+        const { isWeekend, isSat, isSun, isFri, assignedTodayIds } = getContext(day);
+        let seniorAssignedToday = Array.from(assignedTodayIds).some(id => this.staff.find(s => s.id === id)?.role === 1);
+
+        if (!seniorAssignedToday) {
+            const shuffledServicesForSenior = [...this.services].sort(() => Math.random() - 0.5);
+            for (const service of shuffledServicesForSenior) {
+                if (seniorAssignedToday) break;
+                if (service.minDailyCount <= 0) continue;
+                
+                const currentDayAssignments = dayAssignmentsMap.get(day)!;
+                const count = currentDayAssignments.filter(a => a.serviceId === service.id).length;
+                if (count >= service.minDailyCount) continue; // Don't overfill logic yet
+
+                const seniorCandidate = this.findBestCandidate(
+                    service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
+                    isWeekend, isSat, isSun, isFri, 
+                    { restrictRole: 1 } 
+                );
+
+                if (seniorCandidate) {
+                   assignToSlot(day, seniorCandidate, service);
+                   seniorAssignedToday = true;
+                }
+            }
+        }
+    }
+
+    // --- PHASE 2: FILL MINIMUMS (LAYERED Global Pass) ---
+    // Critical Change: We iterate by "Fill Layer" first, then by Day.
+    // Layer 1: Fill 1st slot of Service A, Service B, etc. for ALL Days.
+    // Layer 2: Fill 2nd slot of Service A, Service B, etc. for ALL Days.
+    
+    const maxMinDailyCount = Math.max(...this.services.map(s => s.minDailyCount));
+
+    for (let layer = 1; layer <= maxMinDailyCount; layer++) {
+        // Recalculate sort order for each layer slightly to avoid bias? 
+        // Keeping consistent hard day sort is usually better.
+        
+        for (const day of daysToProcess) {
+            const { isWeekend, isSat, isSun, isFri, assignedTodayIds } = getContext(day);
+            const currentDayAssignments = dayAssignmentsMap.get(day)!;
+            const dailyServices = [...this.services].sort((a, b) => this.getServiceDifficulty(b) - this.getServiceDifficulty(a));
+
+            for (const service of dailyServices) {
+                // How many do we have now?
+                let currentServiceCount = currentDayAssignments.filter(a => a.serviceId === service.id).length;
+                
+                // Only try to fill if we haven't met the CURRENT LAYER target AND haven't met the SERVICE MIN
+                // e.g. If Layer is 2, but Service Min is 1, we stop at 1.
+                while (currentServiceCount < layer && currentServiceCount < service.minDailyCount) {
+                    
+                    let bestCandidate = this.findBestCandidate(
+                        service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
+                        isWeekend, isSat, isSun, isFri, {} 
+                    );
+
+                    if (!bestCandidate) {
+                        bestCandidate = this.findBestCandidate(
+                            service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
+                            isWeekend, isSat, isSun, isFri, { desperate: true }
+                        );
+                    }
+
+                    if (bestCandidate) {
+                        assignToSlot(day, bestCandidate, service);
+                        assignedTodayIds.add(bestCandidate.id);
+                        currentServiceCount++;
+                    } else {
+                        // If we can't fill Layer 1, that's a problem. 
+                        // But if we can't fill Layer 2, maybe we just leave it for now.
+                        // We mark empty only if we are at the final layer logic or give up?
+                        // For visualization, we only push EMPTY if we completely fail after all attempts.
+                        break; // Move to next service
+                    }
+                }
+            }
+        }
+    }
+
+    // Final Minimum Check (Fill gaps with EMPTY)
+    for (const day of daysToProcess) {
+        const currentDayAssignments = dayAssignmentsMap.get(day)!;
+        for (const service of this.services) {
+            const count = currentDayAssignments.filter(a => a.serviceId === service.id).length;
+            if (count < service.minDailyCount) {
+                for(let i=count; i<service.minDailyCount; i++) {
+                    unfilledSlots++;
+                     currentDayAssignments.push({
+                        serviceId: service.id,
+                        staffId: 'EMPTY',
+                        staffName: `BOŞ (Min:${service.minDailyCount})`,
+                        role: 0,
+                        unit: '-'
+                     });
+                }
+            }
+        }
+    }
+
+    // --- PHASE 3: FILL TO GLOBAL TARGET (MAX BALANCE) (Global Pass) ---
+    if (this.config.dailyTotalTarget > 0) {
+        for (const day of daysToProcess) {
+             const { isWeekend, isSat, isSun, isFri, assignedTodayIds } = getContext(day);
+             const currentDayAssignments = dayAssignmentsMap.get(day)!;
+             let currentTotalStaff = currentDayAssignments.filter(a => a.staffId !== 'EMPTY').length;
+
+             let protectionCounter = 0;
+             while (currentTotalStaff < this.config.dailyTotalTarget && protectionCounter < 50) {
+                  protectionCounter++;
+                  const flexibleServices = this.services.filter(s => {
+                      const currentCount = currentDayAssignments.filter(a => a.serviceId === s.id).length;
+                      return currentCount < s.maxDailyCount;
+                  });
+                  
+                  if (flexibleServices.length === 0) break;
+                  
+                  flexibleServices.sort((a, b) => this.getPotentialCandidatesCount(b) - this.getPotentialCandidatesCount(a));
+                  
+                  let filledSomething = false;
+                  for (const service of flexibleServices) {
+                       let extraCandidate = this.findBestCandidate(
+                          service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
+                          isWeekend, isSat, isSun, isFri, {} 
+                      );
+                      
+                      if (!extraCandidate) {
+                          extraCandidate = this.findBestCandidate(
+                              service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
+                              isWeekend, isSat, isSun, isFri, { desperate: true }
+                          );
+                      }
+    
+                      if (extraCandidate) {
+                          assignToSlot(day, extraCandidate, service);
+                          assignedTodayIds.add(extraCandidate.id);
+                          currentTotalStaff++;
+                          filledSomething = true;
+                          break; 
+                      }
                   }
-              }
-              
-              if (!filledSomething) break; // Could not find anyone for any service
-          }
-      }
+                  if (!filledSomething) break;
+             }
+        }
     }
 
     const schedule: DaySchedule[] = [];
@@ -385,8 +414,6 @@ export class Scheduler {
       stats: Array.from(staffStats.entries()).map(([id, s]) => ({
         staffId: id,
         totalShifts: s.total,
-        serviceShifts: s.service,
-        emergencyShifts: s.emergency,
         weekendShifts: s.weekend,
         saturdayShifts: s.saturday,
         sundayShifts: s.sunday
@@ -412,27 +439,69 @@ export class Scheduler {
       const activeJuniors = this.staff.filter(s => s.role === 3 && s.isActive);
       let minJuniorShifts = 999;
       if (activeJuniors.length > 0) {
-          minJuniorShifts = Math.min(...activeJuniors.map(j => staffStats.get(j.id)?.service || 0));
+          minJuniorShifts = Math.min(...activeJuniors.map(j => staffStats.get(j.id)?.total || 0));
       }
 
-      // 2. Min Shifts Map by Role - Used for Horizontal Fairness (Same Role Balance)
+      // 2. Min Shifts Map by Role - EXCLUDING SPECIALTIES for Water Level Rule
+      // FIXED: Also Exclude staff who have reached their quota from dragging down the average.
       const minShiftsByRole: Record<number, number> = {};
       [1, 2, 3].forEach(r => {
-          const peers = this.staff.filter(s => s.role === r && s.isActive);
-          if (peers.length > 0) {
-              minShiftsByRole[r] = Math.min(...peers.map(p => staffStats.get(p.id)?.service || 0));
+          // Filter ONLY standard staff (no specialty) to calculate the "Water Level"
+          const peers = this.staff.filter(s => 
+              s.role === r && 
+              s.isActive && 
+              (s.specialty === 'none' || !s.specialty)
+          );
+          
+          // FILTER: Only consider peers who still have quota space!
+          // If a peer is maxed out, they shouldn't force others to wait.
+          const unfinishedPeers = peers.filter(p => {
+              const stats = staffStats.get(p.id);
+              return stats && stats.total < p.quotaService;
+          });
+
+          // Fallback: If everyone is finished, look at everyone (effectively disables rule)
+          const referenceGroup = unfinishedPeers.length > 0 ? unfinishedPeers : peers;
+
+          if (referenceGroup.length > 0) {
+              minShiftsByRole[r] = Math.min(...referenceGroup.map(p => staffStats.get(p.id)?.total || 0));
           } else {
               minShiftsByRole[r] = 0;
           }
       });
       
+      // Check if a senior is ALREADY assigned today (Stateless check)
+      const seniorCountOnDay = Array.from(assignedTodayIds).filter(id => this.staff.find(s => s.id === id)?.role === 1).length;
+      
+      // Get set of Units assigned today for Diversity Score
+      // Get counts of units to prevent clumping (e.g. 2 KBB today)
+      const assignedUnitsCount = new Map<string, number>();
+      assignedTodayIds.forEach(id => {
+          const s = this.staff.find(st => st.id === id);
+          if (s && s.unit) {
+              assignedUnitsCount.set(s.unit, (assignedUnitsCount.get(s.unit) || 0) + 1);
+          }
+      });
+
+      // Get set of Units assigned YESTERDAY for Smoothing Score
+      const assignedYesterdayUnitsCount = new Map<string, number>();
+      const yesterdayAssignments = dayAssignmentsMap.get(day - 1);
+      if (yesterdayAssignments) {
+          yesterdayAssignments.forEach(a => {
+              const s = this.staff.find(st => st.id === a.staffId);
+              if (s && s.unit) {
+                  assignedYesterdayUnitsCount.set(s.unit, (assignedYesterdayUnitsCount.get(s.unit) || 0) + 1);
+              }
+          });
+      }
+
       const candidates = this.staff.filter(person => {
           // --- OPTIONS FILTERS ---
           if (options.restrictRole !== undefined && person.role !== options.restrictRole) return false;
           if (options.excludeRole !== undefined && person.role === options.excludeRole) return false;
           
           // CRITICAL: Mandatory Specialty Reservation (Used in Phase 0)
-          if (options.restrictSpecialty && person.specialty !== options.restrictSpecialty) return false;
+          if (options.restrictSpecialty && person.specialty?.trim() !== options.restrictSpecialty) return false;
 
           // --- HARD CONSTRAINTS ---
           
@@ -443,8 +512,8 @@ export class Scheduler {
           // 2. Strict 24h Shift Rule
           if (this.hasShiftOnDay(dayAssignmentsMap, day - 1, person.id)) return false;
           if (this.hasShiftOnDay(dayAssignmentsMap, day + 1, person.id)) return false;
-
-          // 3. Unit Matching (Branş) & Constraints
+          
+          // 4. Unit Matching (Branş) & Constraints
           const isNewNurse = person.role === 3;
           
           if (!isNewNurse) {
@@ -455,27 +524,22 @@ export class Scheduler {
               }
 
               // B. Unit Day Constraints (Legacy Unit Check)
-              // If unitConstraint matches person.unit, apply days
               const constraint = this.config.unitConstraints.find(c => c.unit === person.unit);
               if (constraint) {
                   if (!constraint.allowedDays.includes(dayOfWeek)) return false;
               }
               
-              // C. Specialty Day Constraints
+              // C. Specialty Day Constraints (Dynamic Logic)
               if (person.specialty && person.specialty !== 'none') {
-                  let specName = '';
-                  if (person.specialty === 'transplant') specName = 'Transplantasyon';
-                  if (person.specialty === 'wound') specName = 'Yara Bakım';
-                  
-                  const specConstraint = this.config.unitConstraints.find(c => c.unit === specName);
+                  const specConstraint = this.config.unitConstraints.find(c => c.unit.trim() === person.specialty?.trim());
                   if (specConstraint) {
-                      // If constraint exists, they can ONLY work on allowed days
+                      // If constraint exists for this specialty name, they can ONLY work on allowed days
                       if (!specConstraint.allowedDays.includes(dayOfWeek)) return false;
                   }
               }
           }
 
-          // 4. ROOMMATE CONFLICTS
+          // 5. ROOMMATE CONFLICTS
           const roommates = this.roommatesMap.get(person.id) || [];
           for (const roommateId of roommates) {
               if (assignedTodayIds.has(roommateId)) return false;
@@ -483,12 +547,12 @@ export class Scheduler {
               if (this.hasShiftOnDay(dayAssignmentsMap, day + 1, roommateId)) return false;
           }
 
-          // 5. Quotas (Strict - Never exceed even in desperate)
+          // 6. Quotas (Strict - Never exceed even in desperate)
           const stats = staffStats.get(person.id)!;
-          if (stats.service >= person.quotaService) return false;
+          if (stats.total >= person.quotaService) return false;
           if (isWeekend && stats.weekend >= person.weekendLimit) return false;
 
-          // 6. Thursday-Weekend Conflict
+          // 7. Thursday-Weekend Conflict
           if (isSat && this.hasShiftOnDay(dayAssignmentsMap, day - 2, person.id)) return false;
           if (isSun && this.hasShiftOnDay(dayAssignmentsMap, day - 3, person.id)) return false;
           if (dayOfWeek === 4) {
@@ -496,25 +560,34 @@ export class Scheduler {
              if (this.hasShiftOnDay(dayAssignmentsMap, day + 3, person.id)) return false;
           }
 
-          // --- FAIRNESS RULES (Skipped only in desperate mode) ---
+          // --- STRICT HORIZONTAL FAIRNESS (HARD CONSTRAINT) ---
+          // "Aynı kıdem içinde nöbet farkı 1den fazla olamaz."
+          // Applies only to standard staff (no specialty) who haven't maxed out quota.
+          if (person.specialty === 'none' || !person.specialty) {
+              if (stats.total > minShiftsByRole[person.role]) {
+                  return false;
+              }
+          }
+          
+          // --- STRICT SENIOR STACKING (HARD CONSTRAINT) ---
+          if (person.role === 1) {
+              // Rule 1: ABSOLUTE MAX 2 Seniors per day. No exception.
+              if (seniorCountOnDay >= 2) return false;
+              
+              // Rule 2: Try to keep it at 1 if not desperate.
+              if (!options.desperate && seniorCountOnDay >= 1) {
+                  return false;
+              }
+          }
+
+          // --- SOFT CONSTRAINTS (Skipped in desperate mode) ---
           if (!options.desperate) {
               
-              // 7. STRICT JUNIOR (ROLE 3) PRIORITY (Vertical Fairness)
-              // Experienced (Role 2) cannot take shift if they have >= shifts than the lowest Junior.
+              // 8. STRICT JUNIOR (ROLE 3) PRIORITY (Vertical Fairness)
               if (person.role === 2 && activeJuniors.length > 0) {
-                  if (stats.service >= minJuniorShifts) {
+                  if (stats.total >= minJuniorShifts) {
                       return false;
                   }
-              }
-
-              // 8. STRICT HORIZONTAL FAIRNESS (Same Role Balance)
-              // "Aynı kıdem içinde nöbet farkı 1den fazla olamaz."
-              // This means MaxShifts - MinShifts <= 1.
-              // If my current shifts > minShifts of my role, I am already +1 ahead of the bottom.
-              // Taking another shift would make me +2 ahead.
-              // So, I must wait for the bottom person to catch up.
-              if (stats.service > minShiftsByRole[person.role]) {
-                  return false;
               }
           }
           
@@ -526,16 +599,13 @@ export class Scheduler {
           // SCORING LOGIC
 
           // 1. Mandatory Reservation Bonus (Phase 0)
-          if (options.restrictSpecialty && person.specialty === options.restrictSpecialty) {
+          if (options.restrictSpecialty && person.specialty?.trim() === options.restrictSpecialty) {
               score += 500000;
           }
 
           // 2. Specialty Priority (Fallback for Phase 2)
           if (person.specialty && person.specialty !== 'none') {
-             let specName = '';
-             if (person.specialty === 'transplant') specName = 'Transplantasyon';
-             if (person.specialty === 'wound') specName = 'Yara Bakım';
-             const constraint = this.config.unitConstraints.find(c => c.unit === specName);
+             const constraint = this.config.unitConstraints.find(c => c.unit.trim() === person.specialty?.trim());
              if (constraint && constraint.allowedDays.includes(dayOfWeek)) {
                  score += 100000;
              }
@@ -545,21 +615,68 @@ export class Scheduler {
           if (person.requestedDays && person.requestedDays.includes(day)) {
               score += 20000;
           }
+          
+          // 4. UNIT DIVERSITY & SATURATION SCORE
+          const countToday = assignedUnitsCount.get(person.unit) || 0;
+          const countYesterday = assignedYesterdayUnitsCount.get(person.unit) || 0;
+          
+          // A. Diversity Bonus (Start of day)
+          if (countToday === 0) {
+              score += 10000;
+          }
+          
+          // B. Saturation Penalty (Prevent "2 KBB today")
+          // If 1 KBB is already assigned, heavily penalize adding a 2nd one.
+          // Exception: If the service explicitly REQUIRES this unit (e.g. KBB Service), we must allow it.
+          // Note: service.allowedUnits might be null or empty for general services.
+          const isServiceRestrictedToUnit = service.allowedUnits?.includes(person.unit);
+          
+          if (countToday > 0 && !isServiceRestrictedToUnit) {
+               score -= 8000; // Strong penalty to push the 2nd KBB to tomorrow
+          }
 
-          // 4. GLOBAL JUNIOR BIAS
-          // Even without strict blocking, we generally prefer Role 3
+          // C. Consecutive Unit Smoothing (Prevent "2 yesterday, 0 today")
+          // If KBB worked yesterday, penalize KBB today slightly to encourage spacing.
+          // This forces the "1 today, 1 tomorrow" pattern instead of "2 today".
+          if (countYesterday > 0 && !isServiceRestrictedToUnit) {
+              score -= 3000; 
+          }
+          
+          // D. Gap Filling Bonus
+          // If no KBB yesterday AND no KBB today (yet), boost to fill the gap
+          if (countYesterday === 0 && countToday === 0) {
+              score += 2000;
+          }
+
+          // 5. GLOBAL JUNIOR BIAS
           if (person.role === 3) {
               score += 2000; 
           }
 
-          // 5. Quota Hunger (High Weight to solve "Zero Shifts" problem)
-          const remaining = person.quotaService - stats.service;
-          score += (remaining * 2000); // Increased from 1000
+          // 6. Senior Stacking Penalty (Second Senior Discouragement)
+          // If 1 senior is present, apply penalty to adding a 2nd one.
+          // This allows it if desperate (since hard constraint > 2), but discourages it.
+          if (person.role === 1 && seniorCountOnDay >= 1) {
+              score -= 50000; 
+          }
+          
+          // 7. SATURDAY SENIOR AVERSION
+          // Reduce score for Seniors on Saturday to prevent "Clumping" on the hardest day
+          // This forces the algorithm to pick Role 2/3 for Saturday slots first.
+          // Phase 1 still guarantees 1 senior, but Phase 2 won't pick a 2nd one easily,
+          // and Phase 1 will pick the Senior with the LEAST shifts anyway.
+          if (person.role === 1 && isSat) {
+              score -= 5000;
+          }
 
-          // 6. Weekend Fairness
+          // 8. Quota Hunger (High Weight)
+          const remaining = person.quotaService - stats.total;
+          score += (remaining * 3000); // Increased weight to overcome soft penalties if necessary
+
+          // 9. Weekend Fairness
           if (isWeekend) score -= (stats.weekend * 2000);
 
-          // 7. Spread (Soft Constraint)
+          // 10. Spread (Soft Constraint)
           if (this.config.preventEveryOtherDay) {
               if (this.hasShiftOnDay(dayAssignmentsMap, day - 2, person.id)) score -= 1000;
           }

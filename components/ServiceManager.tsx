@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo } from 'react';
 import { Service, Staff, UnitConstraint } from '../types';
 import { Card, Button, Badge, MultiSelect } from './ui';
@@ -14,15 +15,17 @@ interface ServiceManagerProps {
     setUnitConstraints?: React.Dispatch<React.SetStateAction<UnitConstraint[]>>;
     dailyTotalTarget?: number;
     setDailyTotalTarget?: React.Dispatch<React.SetStateAction<number>>;
+    customSpecialties: string[];
 }
 
 export const ServiceManager: React.FC<ServiceManagerProps> = ({ 
     services, setServices, staff, isBlackAndWhite,
     unitConstraints = [], setUnitConstraints,
-    dailyTotalTarget, setDailyTotalTarget
+    dailyTotalTarget, setDailyTotalTarget,
+    customSpecialties
 }) => {
     const [newService, setNewService] = useState<Partial<Service>>({ 
-        name: '', minDailyCount: 1, maxDailyCount: 1, isEmergency: false, allowedUnits: [] 
+        name: '', minDailyCount: 1, maxDailyCount: 1, allowedUnits: [] 
     });
 
     const [editingService, setEditingService] = useState<Service | null>(null);
@@ -33,10 +36,9 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
     const uniqueConstraintTargets = useMemo(() => {
         const units = new Set(staff.map(s => (s.unit || "").trim()));
         // Add specific specialty names that map to logic
-        units.add('Transplantasyon');
-        units.add('Yara Bakım');
+        customSpecialties.forEach(s => units.add(s));
         return Array.from(units).filter(u => u.length > 0).sort();
-    }, [staff]);
+    }, [staff, customSpecialties]);
 
     // Unique Staff Units (For Service Filtering)
     const uniqueStaffUnits = useMemo(() => {
@@ -47,7 +49,7 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
     const handleAddService = () => {
         if (!newService.name) return;
         setServices([...services, { ...newService, id: Date.now().toString() } as Service]);
-        setNewService({ name: '', minDailyCount: 1, maxDailyCount: 1, isEmergency: false, allowedUnits: [] });
+        setNewService({ name: '', minDailyCount: 1, maxDailyCount: 1, allowedUnits: [] });
     };
 
     const handleUpdateService = () => {
@@ -195,7 +197,7 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {uniqueConstraintTargets.map(unit => {
-                            const isSpecialty = unit === 'Transplantasyon' || unit === 'Yara Bakım';
+                            const isSpecialty = customSpecialties.includes(unit);
                             return (
                                 <div key={unit} className={`p-3 rounded-lg border ${isBlackAndWhite ? 'border-slate-700 bg-slate-800' : 'border-gray-200 bg-gray-50'}`}>
                                     <div className={`font-bold text-sm mb-2 flex items-center gap-2 ${isBlackAndWhite ? 'text-white' : 'text-gray-800'}`}>
