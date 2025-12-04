@@ -136,23 +136,18 @@ export class Scheduler {
       let seniorAssignedToday = false;
 
       // --- PHASE 1: ASSIGN 1 SENIOR (ROLE 1) GLOBALLY ---
-      // We shuffle services so the "Senior" slot rotates among units (Gen Surg, ENT, etc.)
-      // instead of always going to the "hardest" service first.
       const shuffledServicesForSenior = [...this.services].sort(() => Math.random() - 0.5);
 
       for (const service of shuffledServicesForSenior) {
-          if (seniorAssignedToday) break; // Only 1 per day across ALL services
+          if (seniorAssignedToday) break; 
           
-          // Check if this service accepts seniors (Role 1)
           if (!service.allowedRoles.includes(1)) continue;
-
-          // Check if we need to assign someone here at all (Min > 0)
           if (service.minDailyCount <= 0) continue;
 
           const seniorCandidate = this.findBestCandidate(
               service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
               isWeekend, isSat, isSun, isFri, 
-              { restrictRole: 1 } // FORCE SENIOR
+              { restrictRole: 1 } 
           );
 
           if (seniorCandidate) {
@@ -179,16 +174,13 @@ export class Scheduler {
       }
 
       // --- PHASE 2: FILL REMAINING SLOTS ---
-      // Now we sort by difficulty to ensure hard-to-fill slots get priority for remaining staff
       const dailyServices = [...this.services].sort((a, b) => this.getServiceDifficulty(b) - this.getServiceDifficulty(a));
 
       for (const service of dailyServices) {
-        // Count how many people assigned to this service so far (could be 1 if senior was placed here)
         let currentServiceCount = currentDayAssignments.filter(a => a.serviceId === service.id).length;
 
         for (let i = currentServiceCount; i < service.minDailyCount; i++) {
           
-          // CRITICAL: If a senior was assigned in Phase 1, we BAN seniors in Phase 2.
           let bestCandidate = this.findBestCandidate(
               service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
               isWeekend, isSat, isSun, isFri, 
@@ -227,12 +219,9 @@ export class Scheduler {
             if (isSun) stats.sunday++;
 
             currentServiceCount++;
-
-            // If we somehow assigned a senior here (e.g. Phase 1 failed, but Phase 2 found one - rare logic gap), mark it.
             if (bestCandidate.role === 1) seniorAssignedToday = true;
 
           } else {
-             // Fill with EMPTY only if we are below min count
              if (currentDayAssignments.filter(a => a.serviceId === service.id).length < service.minDailyCount) {
                  unfilledSlots++;
                  currentDayAssignments.push({
@@ -293,40 +282,27 @@ export class Scheduler {
           if (options.restrictRole !== undefined && person.role !== options.restrictRole) return false;
           if (options.excludeRole !== undefined && person.role === options.excludeRole) return false;
 
-          // --- HARD CONSTRAINTS (NEVER COMPROMISE) ---
+          // --- HARD CONSTRAINTS ---
           
           // 1. Availability
           if (assignedTodayIds.has(person.id)) return false;
           if (person.offDays.includes(day)) return false;
 
-          // 2. Strict 24h Shift Rule: No shift on Day T-1 or Day T+1
+          // 2. Strict 24h Shift Rule
           if (this.hasShiftOnDay(dayAssignmentsMap, day - 1, person.id)) return false;
           if (this.hasShiftOnDay(dayAssignmentsMap, day + 1, person.id)) return false;
 
-          // 3. Unit Matching (Branş)
-          // Exception: Role 3 (Yeni/Çömez) can work anywhere (Joker)
+          // 3. Unit Matching (Branş) & Constraints
           const isNewNurse = person.role === 3;
-          if (!isNewNurse && service.allowedUnits && service.allowedUnits.length > 0) {
-              if (!service.allowedUnits.includes(person.unit)) return false;
-          }
-
-          // 4. ROOMMATE CONFLICTS (CRITICAL)
-          const roommates = this.roommatesMap.get(person.id) || [];
-          for (const roommateId of roommates) {
-              // Rule A: Roommate cannot work on the same day (Same Salon Conflict)
-              if (assignedTodayIds.has(roommateId)) return false;
-
-              // Rule B: "Nöbet ertesi olanın oda arkadaşına nöbet yazma"
-              // Eğer oda arkadaşı dün nöbet tuttuysa (bugün ertesi), bugün ben tutamam.
-              if (this.hasShiftOnDay(dayAssignmentsMap, day - 1, roommateId)) return false;
-
-              // Rule C: Future conflict check (symmetry)
-              if (this.hasShiftOnDay(dayAssignmentsMap, day + 1, roommateId)) return false;
-          }
-
-          // 5. Special Unit Constraints (Dynamic)
-          // Look up if this unit has any restrictions
+          
           if (!isNewNurse) {
+              // A. Service Unit Matching
+              if (service.allowedUnits && service.allowedUnits.length > 0) {
+                  if (!service.allowedUnits.includes(person.unit)) return false;
+              }
+
+              // B. Unit Day Constraints
+              // Check if this person's unit has a restriction
               const constraint = this.config.unitConstraints.find(c => c.unit === person.unit);
               if (constraint) {
                   // If constraint exists, person can ONLY work on allowed days
@@ -334,21 +310,22 @@ export class Scheduler {
               }
           }
 
-          // 6. Quotas
+          // 4. ROOMMATE CONFLICTS
+          const roommates = this.roommatesMap.get(person.id) || [];
+          for (const roommateId of roommates) {
+              if (assignedTodayIds.has(roommateId)) return false;
+              if (this.hasShiftOnDay(dayAssignmentsMap, day - 1, roommateId)) return false;
+              if (this.hasShiftOnDay(dayAssignmentsMap, day + 1, roommateId)) return false;
+          }
+
+          // 5. Quotas
           const stats = staffStats.get(person.id)!;
           if (stats.service >= person.quotaService) return false;
           if (isWeekend && stats.weekend >= person.weekendLimit) return false;
 
-          // 7. Thursday-Weekend Conflict Rule
-          // If Saturday(6), check Thursday(4)
-          if (isSat) {
-              if (this.hasShiftOnDay(dayAssignmentsMap, day - 2, person.id)) return false;
-          }
-          // If Sunday(0), check Thursday(4)
-          if (isSun) {
-              if (this.hasShiftOnDay(dayAssignmentsMap, day - 3, person.id)) return false;
-          }
-          // If Thursday(4), check upcoming Sat/Sun
+          // 6. Thursday-Weekend Conflict
+          if (isSat && this.hasShiftOnDay(dayAssignmentsMap, day - 2, person.id)) return false;
+          if (isSun && this.hasShiftOnDay(dayAssignmentsMap, day - 3, person.id)) return false;
           if (dayOfWeek === 4) {
              if (this.hasShiftOnDay(dayAssignmentsMap, day + 2, person.id)) return false;
              if (this.hasShiftOnDay(dayAssignmentsMap, day + 3, person.id)) return false;
@@ -361,37 +338,43 @@ export class Scheduler {
 
           // SCORING LOGIC
 
-          // 1. Request Priority (Highest)
+          // 1. Unit Constraint Priority (CRITICAL)
+          // If this person belongs to a unit that is restricted to specific days (e.g. Transplant on Sat),
+          // and TODAY is that day, we must prioritized them heavily.
+          // Otherwise, generic staff might take the slot, and this specialist won't find a place.
+          const constraint = this.config.unitConstraints.find(c => c.unit === person.unit);
+          if (constraint && constraint.allowedDays.includes(dayOfWeek)) {
+             score += 20000;
+          }
+
+          // 2. Request Priority
           if (person.requestedDays && person.requestedDays.includes(day)) {
               score += 50000;
           }
 
-          // 2. Quota Hunger (Fill those furthest from target)
+          // 3. Quota Hunger
           const remaining = person.quotaService - stats.service;
           score += (remaining * 1000);
 
-          // 3. Weekend Fairness
-          if (isWeekend) {
-              score -= (stats.weekend * 2000);
-          }
+          // 4. Weekend Fairness
+          if (isWeekend) score -= (stats.weekend * 2000);
 
-          // 4. Spread (Prevent tight clusters if possible, though strict rule handles neighbours)
+          // 5. Spread
           if (this.config.preventEveryOtherDay) {
               if (this.hasShiftOnDay(dayAssignmentsMap, day - 2, person.id)) score -= 1000;
           }
 
-          // 5. Group Preference (Soft) - Removed as strict, but kept as soft bonus if needed
+          // 6. Group Preference
           if (service.preferredGroup && service.preferredGroup !== 'Farketmez') {
               if (person.group === service.preferredGroup) score += 500;
           }
 
-          // 6. Random Jitter
           score += Math.random() * 500;
 
           return { person, score };
         });
 
-      candidates.sort((a, b) => b.score - a.score); // High score first
+      candidates.sort((a, b) => b.score - a.score);
 
       return candidates.length > 0 ? candidates[0].person : null;
   }
