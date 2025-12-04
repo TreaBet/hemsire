@@ -1,0 +1,292 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ================= ROOT & BASE ================= */
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  @apply bg-gray-100 text-slate-800 antialiased min-h-screen;
+  background-color: #f3f4f6;
+  color: #1f2937;
+}
+
+#root {
+  @apply min-h-screen flex flex-col;
+}
+
+/* ================= ANIMATIONS ================= */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.2s ease-out;
+}
+
+/* ================= SCROLLBAR ================= */
+
+.custom-scrollbar::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #c7c7c7;
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Dark Mode Scrollbar Overrides */
+.high-contrast .custom-scrollbar::-webkit-scrollbar-track {
+  background: #0f172a; /* Slate-900 */
+}
+.high-contrast .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155; /* Slate-700 */
+}
+.high-contrast .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569; /* Slate-600 */
+}
+
+/* ================= COMPONENT DARK MODE OVERRIDES ================= */
+/* This section guarantees dark mode styles stick even if React loading order varies */
+
+.high-contrast .card-base {
+    background-color: #0f172a !important; /* slate-900 */
+    border-color: #334155 !important; /* slate-700 */
+    color: #f8fafc !important;
+}
+
+/* MultiSelect Dark Mode */
+.high-contrast .multi-select-trigger {
+    background-color: #1e293b !important; /* slate-800 */
+    border-color: #334155 !important;
+}
+.high-contrast .multi-select-trigger .placeholder-text {
+    color: #94a3b8 !important; /* slate-400 */
+}
+.high-contrast .multi-select-trigger .value-text {
+    color: #f8fafc !important;
+}
+.high-contrast .multi-select-trigger .icon {
+    color: #94a3b8 !important;
+}
+
+.high-contrast .multi-select-dropdown {
+    background-color: #1e293b !important; /* slate-800 */
+    border-color: #334155 !important;
+}
+.high-contrast .multi-select-option {
+    color: #cbd5e1 !important; /* slate-300 */
+}
+.high-contrast .multi-select-option:hover {
+    background-color: #334155 !important; /* slate-700 */
+}
+
+/* Date Modal Dark Mode */
+.high-contrast .date-select-modal-content {
+    background-color: #0f172a !important; /* slate-900 */
+    border-color: #334155 !important;
+}
+.high-contrast .date-select-modal-header {
+    background-color: #1e293b !important; /* slate-800 */
+    border-color: #334155 !important;
+}
+.high-contrast .date-select-modal-header .title {
+    color: #f8fafc !important;
+}
+.high-contrast .date-select-modal-header .close-btn:hover {
+    background-color: #334155 !important;
+}
+.high-contrast .date-select-modal-content .footer {
+    border-color: #334155 !important;
+}
+.high-contrast .date-select-modal-content .day-btn {
+    background-color: #1e293b !important;
+    border-color: #334155 !important;
+    color: #cbd5e1 !important;
+}
+.high-contrast .date-select-modal-content .day-btn:hover {
+    background-color: #334155 !important;
+    border-color: #475569 !important;
+}
+.high-contrast .date-select-modal-content .cancel-btn {
+    color: #94a3b8 !important;
+}
+.high-contrast .date-select-modal-content .cancel-btn:hover {
+    background-color: #1e293b !important;
+    color: #f8fafc !important;
+}
+
+/* ================= REPORT TABLE ================= */
+
+.report-table-container {
+  @apply overflow-x-auto rounded-xl bg-white transition-colors duration-300;
+}
+
+.report-table {
+  @apply min-w-full divide-y divide-gray-200 border-collapse bg-white table-fixed transition-colors duration-300;
+}
+
+.report-table thead th {
+  @apply bg-slate-800 text-white px-2 py-3 text-left text-xs font-bold uppercase tracking-wider sticky top-0 z-20 border-b border-gray-300;
+}
+
+.report-table tbody td {
+  @apply px-0 py-0 text-sm border-b border-gray-100 bg-white text-slate-900 transition-colors;
+}
+
+.report-table .sticky-col {
+  @apply sticky left-0 z-20 border-r border-gray-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)];
+}
+
+.report-table tbody .sticky-col {
+  @apply bg-white text-slate-900 font-medium p-0;
+}
+
+.report-table thead .sticky-col {
+  @apply bg-slate-800 text-white z-30 shadow-none;
+}
+
+.report-table tr.is-weekend td {
+  @apply bg-orange-50/50;
+}
+
+.report-table tr.is-weekend .sticky-col {
+  @apply bg-orange-50;
+}
+
+.report-table tbody tr:hover td {
+  background-color: #f8fafc;
+}
+.report-table tbody tr:hover .sticky-col {
+  background-color: #f8fafc;
+}
+
+/* ================= DARK MODE TABLE OVERRIDES ================= */
+
+.high-contrast .report-table-container {
+  @apply border border-slate-700 bg-slate-900;
+}
+
+.high-contrast .report-table {
+  @apply bg-slate-900 divide-slate-700;
+}
+
+.high-contrast .report-table thead th {
+  @apply bg-slate-950 text-slate-200 border-b border-slate-800;
+}
+
+.high-contrast .report-table tbody td {
+  color: #cbd5e1; /* Slate-300 */
+  @apply border-slate-800 bg-slate-900;
+}
+
+.high-contrast .report-table tr.is-weekend td,
+.high-contrast .report-table tr.is-weekend .sticky-col {
+  @apply bg-slate-800/50 text-amber-200/90 border-slate-800;
+}
+
+.high-contrast .report-table tbody .sticky-col {
+  @apply bg-slate-900 border-r border-slate-800 text-slate-200;
+}
+
+.high-contrast .report-table thead .sticky-col {
+  @apply bg-slate-950 text-white border-r border-slate-800;
+}
+
+.high-contrast .report-table tbody tr:hover td,
+.high-contrast .report-table tbody tr:hover .sticky-col {
+  background-color: #1e293b; /* Slate-800 */
+}
+
+/* ================= BADGES ================= */
+
+.slot-badge {
+  @apply px-2 py-2 rounded-lg border mb-1 block w-full text-left truncate transition-all cursor-default shadow-sm select-none min-h-[32px];
+}
+
+.slot-badge.clickable:hover:not(.slot-selected):not(.slot-dragging) {
+  @apply ring-2 ring-indigo-400 scale-[1.02] cursor-pointer shadow-md z-10;
+}
+
+.slot-empty {
+  @apply bg-rose-50 border-rose-200 text-rose-700 font-bold border-dashed border-2;
+}
+
+.slot-normal {
+  @apply bg-white border-gray-200 text-gray-800 hover:border-indigo-300;
+}
+
+.slot-emergency {
+  @apply bg-red-700 border-red-800 text-white font-medium hover:bg-red-800;
+}
+
+.slot-emergency .dot {
+  background-color: white;
+}
+
+.slot-selected {
+  @apply ring-4 ring-indigo-500/50 border-indigo-600 z-30 scale-[1.05] shadow-xl relative;
+}
+
+.slot-dragging {
+  @apply opacity-50 cursor-grabbing border-dashed border-2 border-indigo-400 scale-95;
+}
+
+.slot-drag-over {
+  @apply ring-2 ring-emerald-500 bg-emerald-50;
+}
+
+/* Dark Mode Badges */
+.high-contrast .slot-badge {
+  @apply shadow-none;
+}
+
+.high-contrast .slot-empty {
+  @apply border-dashed border-slate-600 bg-slate-800 text-slate-400;
+}
+
+.high-contrast .slot-normal {
+  @apply bg-slate-800 text-slate-200 border-slate-700 hover:border-indigo-400 hover:bg-slate-700;
+}
+
+.high-contrast .slot-normal .dot {
+  background-color: #6366f1; /* Indigo-500 */
+}
+
+.high-contrast .slot-emergency {
+  @apply bg-red-900/60 text-white border-red-900 font-bold hover:bg-red-800/80;
+}
+
+.high-contrast .slot-selected {
+  box-shadow: 0 0 0 2px #38bdf8, 0 0 15px rgba(56, 189, 248, 0.4);
+  background-color: #1e293b;
+  border-color: transparent;
+}
+
+.high-contrast .slot-drag-over {
+  box-shadow: inset 0 0 0 2px #22c55e, 0 0 10px rgba(34, 197, 94, 0.4);
+  background-color: rgba(34, 197, 94, 0.1);
+}
