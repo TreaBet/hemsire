@@ -4,7 +4,7 @@ import { ScheduleResult, Service, Staff, DaySchedule } from '../types';
 import { Card, Button } from './ui';
 import { ICONS } from '../constants';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Edit3, Save, X, CheckCircle2, Share2, Clipboard, GripVertical, Pencil, RotateCcw, Search, AlertTriangle, Calendar as CalendarIcon, Download, Link as LinkIcon } from 'lucide-react';
+import { Edit3, Save, X, CheckCircle2, Share2, Clipboard, GripVertical, Pencil, RotateCcw, Search, AlertTriangle, Calendar as CalendarIcon, Download, Link as LinkIcon, AlignJustify, Users, LayoutGrid } from 'lucide-react';
 
 interface ScheduleViewerProps {
     result: ScheduleResult;
@@ -21,10 +21,16 @@ interface ScheduleViewerProps {
 
 export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResult, services, staff, year, month, isBlackAndWhite, handleDownload, isReadOnly = false, onShare }) => {
     
-    // --- Manual Edit State ---
+    // --- View Mode State ---
+    const [viewMode, setViewMode] = useState<'daily' | 'staff'>('daily');
+
+    // --- Manual Edit State (Daily View) ---
     const [isEditing, setIsEditing] = useState(false);
     const [editingSlot, setEditingSlot] = useState<{day: number, serviceId: string, currentStaffId: string} | null>(null);
     const [searchTerm, setSearchTerm] = useState(""); // Search in dropdown
+
+    // --- Manual Edit State (Staff View) ---
+    const [editingStaffSlot, setEditingStaffSlot] = useState<{day: number, staffId: string} | null>(null);
 
     // --- History / Undo State ---
     const [history, setHistory] = useState<DaySchedule[][]>([]);
@@ -123,6 +129,7 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
         });
     };
 
+    // --- Daily View Edit Logic ---
     const handleUpdateAssignment = (newStaffId: string) => {
         if (!editingSlot) return;
         addToHistory();
@@ -152,6 +159,46 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
 
         dayData.assignments[targetAssignmentIndex] = updatedAssignment as any;
         recalculateStats(newSchedule);
+    };
+
+    // --- Staff View Edit Logic ---
+    const handleStaffViewUpdate = (serviceId: string) => {
+        if (!editingStaffSlot) return;
+        const { day, staffId } = editingStaffSlot;
+
+        addToHistory();
+
+        const newSchedule = [...result.schedule];
+        const dayData = newSchedule.find(d => d.day === day);
+        if (!dayData) return;
+
+        // 1. Remove ANY existing assignment for this staff on this day
+        // (Assuming a staff can only do 1 shift per day)
+        const existingIndex = dayData.assignments.findIndex(a => a.staffId === staffId);
+        if (existingIndex !== -1) {
+            dayData.assignments.splice(existingIndex, 1);
+        }
+
+        // 2. If selecting a new service (not clearing), add it
+        if (serviceId !== 'EMPTY') {
+            const service = services.find(s => s.id === serviceId);
+            const person = staff.find(s => s.id === staffId);
+            
+            if (service && person) {
+                dayData.assignments.push({
+                    serviceId: service.id,
+                    staffId: person.id,
+                    staffName: person.name,
+                    role: person.role,
+                    group: person.group,
+                    unit: person.unit,
+                    isEmergency: service.isEmergency
+                });
+            }
+        }
+
+        recalculateStats(newSchedule);
+        setEditingStaffSlot(null);
     };
 
     const checkConsecutiveConflict = (staffId: string, currentDay: number): boolean => {
@@ -340,6 +387,11 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
         }
     }, [editingSlot]);
 
+    // Sorting staff for matrix view (By Unit, then Name)
+    const sortedStaff = useMemo(() => {
+        return [...staff].sort((a, b) => a.unit.localeCompare(b.unit) || a.name.localeCompare(b.name));
+    }, [staff]);
+
     // DARK MODE DROPDOWN STYLES
     const dropdownClasses = isBlackAndWhite 
         ? "bg-slate-800 border border-slate-700 text-white shadow-2xl ring-1 ring-white/10"
@@ -405,19 +457,35 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                   </Card>
             </div>
 
-            {/* Actions Bar - READ ONLY CHECK */}
-            <div className={`flex flex-col sm:flex-row justify-between items-center p-3 rounded-xl border shadow-sm gap-3 ${isBlackAndWhite ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}>
-                 <div className="flex gap-2 w-full sm:w-auto">
+            {/* Actions Bar - View Switcher & Buttons */}
+            <div className={`flex flex-col xl:flex-row justify-between items-center p-3 rounded-xl border shadow-sm gap-3 ${isBlackAndWhite ? 'bg-slate-900 border-slate-700' : 'bg-white border-gray-200'}`}>
+                 
+                 {/* VIEW MODE SWITCHER */}
+                 <div className={`flex p-1 rounded-lg border ${isBlackAndWhite ? 'bg-slate-800 border-slate-700' : 'bg-gray-100 border-gray-200'}`}>
+                    <button 
+                        onClick={() => setViewMode('daily')}
+                        className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${viewMode === 'daily' ? (isBlackAndWhite ? 'bg-slate-600 text-white shadow' : 'bg-white text-indigo-600 shadow') : (isBlackAndWhite ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-800')}`}
+                    >
+                        <LayoutGrid className="w-3.5 h-3.5" /> Günlük
+                    </button>
+                    <button 
+                        onClick={() => setViewMode('staff')}
+                        className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${viewMode === 'staff' ? (isBlackAndWhite ? 'bg-slate-600 text-white shadow' : 'bg-white text-indigo-600 shadow') : (isBlackAndWhite ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-800')}`}
+                    >
+                        <Users className="w-3.5 h-3.5" /> Personel
+                    </button>
+                 </div>
+
+                 <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-center sm:justify-end">
                     <Button variant="secondary" onClick={handleDownload} className={`text-xs h-9 flex-1 sm:flex-none ${isBlackAndWhite ? 'bg-slate-800 text-white border-slate-700 hover:bg-slate-700' : ''}`}>
                        {ICONS.Excel} Excel
                     </Button>
                     <Button variant="secondary" onClick={() => setWhatsAppModalOpen(true)} className={`text-xs h-9 flex-1 sm:flex-none ${isBlackAndWhite ? 'bg-slate-800 text-white border-slate-700 hover:bg-slate-700' : ''}`}>
-                       <Share2 className="w-4 h-4" /> Paylaş & Takvim
+                       <Share2 className="w-4 h-4" /> Paylaş
                     </Button>
-                    {/* Share Link Button - Only show if onShare prop is present and NOT in read only mode */}
                     {!isReadOnly && onShare && (
                         <Button variant="secondary" onClick={onShare} className={`text-xs h-9 flex-1 sm:flex-none text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 ${isBlackAndWhite ? 'bg-slate-800 text-indigo-300 border-slate-700 hover:bg-slate-700' : ''}`}>
-                            <LinkIcon className="w-4 h-4 mr-1" /> Link Paylaş
+                            <LinkIcon className="w-4 h-4 mr-1" /> Link
                         </Button>
                     )}
                     {!isReadOnly && history.length > 0 && (
@@ -425,15 +493,15 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                             <RotateCcw className="w-4 h-4 mr-1" /> Geri Al
                         </Button>
                     )}
+                    
+                    {/* Toggle Edit Button (Only visible in Daily view as Staff view is always editable on click) */}
+                    {!isReadOnly && viewMode === 'daily' && (
+                         <Button variant="secondary" onClick={() => setIsEditing(!isEditing)} className={`text-xs h-9 w-full sm:w-auto ${isEditing ? (isBlackAndWhite ? 'bg-indigo-900/50 text-indigo-200 border-indigo-500' : 'bg-indigo-50 text-indigo-800 border-indigo-200') : (isBlackAndWhite ? 'bg-slate-800 text-white border-slate-700 hover:bg-slate-700' : '')}`}>
+                            {isEditing ? <Save className="w-3.5 h-3.5"/> : <Edit3 className="w-3.5 h-3.5"/>}
+                            {isEditing ? 'Bitir' : 'Düzenle'}
+                        </Button>
+                    )}
                  </div>
-                 
-                 {/* Hide Edit Button if Read Only */}
-                 {!isReadOnly && (
-                     <Button variant="secondary" onClick={() => setIsEditing(!isEditing)} className={`text-xs h-9 w-full sm:w-auto ${isEditing ? (isBlackAndWhite ? 'bg-indigo-900/50 text-indigo-200 border-indigo-500' : 'bg-indigo-50 text-indigo-800 border-indigo-200') : (isBlackAndWhite ? 'bg-slate-800 text-white border-slate-700 hover:bg-slate-700' : '')}`}>
-                        {isEditing ? <Save className="w-3.5 h-3.5"/> : <Edit3 className="w-3.5 h-3.5"/>}
-                        {isEditing ? 'Düzenlemeyi Bitir' : 'Manuel Düzenle'}
-                    </Button>
-                 )}
             </div>
 
             {/* Logs */}
@@ -473,89 +541,168 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                   </div>
             </Card>
 
-            {/* Main Schedule Table */}
-            <Card className={`report-table-container shadow-lg border-0 overflow-hidden ${isBlackAndWhite ? 'bg-slate-900' : ''}`}>
-                  <table className="report-table w-full">
-                    <thead>
-                      <tr>
-                        <th className={`sticky-col w-20 md:w-28 shadow-lg z-30 text-center ${isBlackAndWhite ? 'bg-slate-950 text-white border-b border-slate-700' : 'bg-gray-800 text-white'}`}>Gün</th>
-                        {services.map(s => (
-                          <th key={s.id} className={`min-w-[140px] md:min-w-[160px] ${isBlackAndWhite ? 'bg-slate-950 text-white border-b border-slate-700' : ''}`}>
-                              <div className="truncate font-bold text-sm">{s.name}</div>
-                              <div className="text-[10px] font-normal opacity-70 mt-0.5">Min: {s.minDailyCount} Personel</div>
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {result.schedule.map((day) => (
-                        <tr key={day.day} className={day.isWeekend ? 'is-weekend' : ''}>
-                          <td className={`sticky-col p-0 border-r ${isBlackAndWhite ? 'bg-slate-900 border-slate-700 text-slate-200' : 'border-gray-200'}`} style={{ height: '1px' }}>
-                            <div className="flex flex-col items-center justify-center h-full min-h-[70px] py-2 bg-inherit w-full">
-                              <span className={`text-xl font-bold ${isBlackAndWhite ? 'text-white' : 'text-gray-700'}`}>{day.day}</span>
-                              <span className={`text-[10px] uppercase font-bold px-1.5 rounded ${day.isWeekend ? (isBlackAndWhite ? 'bg-indigo-900/40 text-indigo-200' : 'bg-orange-100 text-orange-700') : (isBlackAndWhite ? 'bg-slate-800 text-slate-400' : 'bg-gray-100 text-gray-500')}`}>
-                                {new Date(year, month, day.day).toLocaleString('tr-TR', {weekday: 'short'})}
-                              </span>
-                            </div>
-                          </td>
-                          {services.map(service => {
-                            const assignments = day.assignments.filter(a => a.serviceId === service.id);
-                            return (
-                              <td key={service.id} 
-                                className={`align-top h-full p-1.5 ${isBlackAndWhite ? 'border-slate-700' : ''}`}
-                                style={{ height: '1px' }}
-                                onDragOver={isEditing ? handleDragOver : undefined}
-                              >
-                                <div className="flex flex-col gap-2 min-h-[70px] h-full justify-start">
-                                    {assignments.length > 0 ? assignments.map((a, idx) => {
-                                      let badgeClass = 'slot-normal';
-                                      if (a.staffId === 'EMPTY') badgeClass = 'slot-empty';
-                                      else if (a.isEmergency) badgeClass = 'slot-emergency';
-                                      
-                                      const isSelected = editingSlot && editingSlot.day === day.day && editingSlot.serviceId === service.id && editingSlot.currentStaffId === a.staffId;
-                                      const isDraggingItem = dragData && dragData.day === day.day && dragData.serviceId === service.id && dragData.staffId === a.staffId;
-                                      const isDropTarget = dragOverTarget && dragOverTarget.day === day.day && dragOverTarget.serviceId === service.id && dragOverTarget.staffId === a.staffId;
-
-                                      return (
-                                        <div 
-                                          key={idx} 
-                                          draggable={isEditing}
-                                          onDragStart={isEditing ? (e) => handleDragStart(e, day.day, service.id, a.staffId) : undefined}
-                                          onDrop={isEditing ? (e) => handleDrop(e, day.day, service.id, a.staffId) : undefined}
-                                          onDragEnter={isEditing ? (e) => handleDragEnter(e, day.day, service.id, a.staffId) : undefined}
-                                          className={`slot-badge ${badgeClass} ${isSelected ? 'slot-selected' : ''} ${isDraggingItem ? 'slot-dragging' : ''} ${isDropTarget ? 'slot-drag-over' : ''} ${isEditing ? 'clickable relative pr-7' : ''} flex justify-between items-center group/slot flex-1`}
-                                          onClick={(e) => {
-                                              if (isEditing) {
-                                                  e.stopPropagation();
-                                                  setEditingSlot({day: day.day, serviceId: service.id, currentStaffId: a.staffId});
-                                              }
-                                          }}
-                                        >
-                                          <div className="flex items-center gap-2 overflow-hidden w-full">
-                                             <div className={`dot w-1.5 h-1.5 rounded-full shrink-0 ${a.isEmergency ? 'bg-white' : (isBlackAndWhite ? 'bg-indigo-400' : 'bg-indigo-500')}`}></div>
-                                             <span className="font-semibold block truncate text-sm select-none">{a.staffName}</span>
-                                          </div>
-                                          {isEditing && (
-                                              <div className="flex items-center gap-1 absolute right-1">
-                                                  <GripVertical className="w-3.5 h-3.5 text-current opacity-50 cursor-move" />
-                                              </div>
-                                          )}
-                                        </div>
-                                      );
-                                    }) : (
-                                      <span className={`text-center text-xs block py-2 border-2 border-dashed rounded-lg h-full flex items-center justify-center select-none ${isBlackAndWhite ? 'border-slate-700 text-slate-600' : 'border-gray-100 text-gray-300'}`}>-</span>
-                                    )}
-                                  </div>
+            {/* CONDITIONAL RENDER: DAILY VIEW or STAFF VIEW */}
+            
+            {viewMode === 'daily' ? (
+                /* --- DAILY VIEW --- */
+                <Card className={`report-table-container shadow-lg border-0 overflow-hidden ${isBlackAndWhite ? 'bg-slate-900' : ''}`}>
+                      <table className="report-table w-full">
+                        <thead>
+                          <tr>
+                            <th className={`sticky-col w-20 md:w-28 shadow-lg z-30 text-center ${isBlackAndWhite ? 'bg-slate-950 text-white border-b border-slate-700' : 'bg-gray-800 text-white'}`}>Gün</th>
+                            {services.map(s => (
+                              <th key={s.id} className={`min-w-[140px] md:min-w-[160px] ${isBlackAndWhite ? 'bg-slate-950 text-white border-b border-slate-700' : ''}`}>
+                                  <div className="truncate font-bold text-sm">{s.name}</div>
+                                  <div className="text-[10px] font-normal opacity-70 mt-0.5">Min: {s.minDailyCount} Personel</div>
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {result.schedule.map((day) => (
+                            <tr key={day.day} className={day.isWeekend ? 'is-weekend' : ''}>
+                              <td className={`sticky-col p-0 border-r ${isBlackAndWhite ? 'bg-slate-900 border-slate-700 text-slate-200' : 'border-gray-200'}`} style={{ height: '1px' }}>
+                                <div className="flex flex-col items-center justify-center h-full min-h-[70px] py-2 bg-inherit w-full">
+                                  <span className={`text-xl font-bold ${isBlackAndWhite ? 'text-white' : 'text-gray-700'}`}>{day.day}</span>
+                                  <span className={`text-[10px] uppercase font-bold px-1.5 rounded ${day.isWeekend ? (isBlackAndWhite ? 'bg-indigo-900/40 text-indigo-200' : 'bg-orange-100 text-orange-700') : (isBlackAndWhite ? 'bg-slate-800 text-slate-400' : 'bg-gray-100 text-gray-500')}`}>
+                                    {new Date(year, month, day.day).toLocaleString('tr-TR', {weekday: 'short'})}
+                                  </span>
+                                </div>
                               </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-            </Card>
+                              {services.map(service => {
+                                const assignments = day.assignments.filter(a => a.serviceId === service.id);
+                                return (
+                                  <td key={service.id} 
+                                    className={`align-top h-full p-1.5 ${isBlackAndWhite ? 'border-slate-700' : ''}`}
+                                    style={{ height: '1px' }}
+                                    onDragOver={isEditing ? handleDragOver : undefined}
+                                  >
+                                    <div className="flex flex-col gap-2 min-h-[70px] h-full justify-start">
+                                        {assignments.length > 0 ? assignments.map((a, idx) => {
+                                          let badgeClass = 'slot-normal';
+                                          if (a.staffId === 'EMPTY') badgeClass = 'slot-empty';
+                                          else if (a.isEmergency) badgeClass = 'slot-emergency';
+                                          
+                                          const isSelected = editingSlot && editingSlot.day === day.day && editingSlot.serviceId === service.id && editingSlot.currentStaffId === a.staffId;
+                                          const isDraggingItem = dragData && dragData.day === day.day && dragData.serviceId === service.id && dragData.staffId === a.staffId;
+                                          const isDropTarget = dragOverTarget && dragOverTarget.day === day.day && dragOverTarget.serviceId === service.id && dragOverTarget.staffId === a.staffId;
 
-            {/* Styled Searchable Dropdown for Editing */}
+                                          return (
+                                            <div 
+                                              key={idx} 
+                                              draggable={isEditing}
+                                              onDragStart={isEditing ? (e) => handleDragStart(e, day.day, service.id, a.staffId) : undefined}
+                                              onDrop={isEditing ? (e) => handleDrop(e, day.day, service.id, a.staffId) : undefined}
+                                              onDragEnter={isEditing ? (e) => handleDragEnter(e, day.day, service.id, a.staffId) : undefined}
+                                              className={`slot-badge ${badgeClass} ${isSelected ? 'slot-selected' : ''} ${isDraggingItem ? 'slot-dragging' : ''} ${isDropTarget ? 'slot-drag-over' : ''} ${isEditing ? 'clickable relative pr-7' : ''} flex justify-between items-center group/slot flex-1`}
+                                              onClick={(e) => {
+                                                  if (isEditing) {
+                                                      e.stopPropagation();
+                                                      setEditingSlot({day: day.day, serviceId: service.id, currentStaffId: a.staffId});
+                                                  }
+                                              }}
+                                            >
+                                              <div className="flex items-center gap-2 overflow-hidden w-full">
+                                                 <div className={`dot w-1.5 h-1.5 rounded-full shrink-0 ${a.isEmergency ? 'bg-white' : (isBlackAndWhite ? 'bg-indigo-400' : 'bg-indigo-500')}`}></div>
+                                                 <span className="font-semibold block truncate text-sm select-none">{a.staffName}</span>
+                                              </div>
+                                              {isEditing && (
+                                                  <div className="flex items-center gap-1 absolute right-1">
+                                                      <GripVertical className="w-3.5 h-3.5 text-current opacity-50 cursor-move" />
+                                                  </div>
+                                              )}
+                                            </div>
+                                          );
+                                        }) : (
+                                          <span className={`text-center text-xs block py-2 border-2 border-dashed rounded-lg h-full flex items-center justify-center select-none ${isBlackAndWhite ? 'border-slate-700 text-slate-600' : 'border-gray-100 text-gray-300'}`}>-</span>
+                                        )}
+                                      </div>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                </Card>
+            ) : (
+                /* --- STAFF VIEW (MATRIX) --- */
+                <Card className={`report-table-container shadow-lg border-0 overflow-hidden ${isBlackAndWhite ? 'bg-slate-900' : ''}`}>
+                    <table className="report-table w-full">
+                        <thead>
+                            <tr>
+                                <th className={`sticky-col w-48 shadow-lg z-30 text-left pl-4 ${isBlackAndWhite ? 'bg-slate-950 text-white border-b border-slate-700' : 'bg-gray-800 text-white'}`}>
+                                    Personel
+                                </th>
+                                {result.schedule.map(d => (
+                                    <th key={d.day} className={`w-10 text-center px-1 ${isBlackAndWhite ? 'bg-slate-950 text-white border-b border-slate-700' : ''} ${d.isWeekend ? (isBlackAndWhite ? 'bg-slate-800' : 'bg-orange-500/20 text-white') : ''}`}>
+                                        <div className="text-xs font-normal opacity-70">{new Date(year, month, d.day).toLocaleString('tr-TR', {weekday: 'short'})}</div>
+                                        <div className="text-sm font-bold">{d.day}</div>
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sortedStaff.map(person => (
+                                <tr key={person.id}>
+                                    <td className={`sticky-col p-2 border-r ${isBlackAndWhite ? 'bg-slate-900 border-slate-700 text-slate-200' : 'border-gray-200'}`}>
+                                        <div className="font-bold text-sm truncate" title={person.name}>{person.name}</div>
+                                        <div className="text-[10px] opacity-60 truncate">{person.unit}</div>
+                                    </td>
+                                    {result.schedule.map(day => {
+                                        // Find assignment for this person on this day
+                                        const assignment = day.assignments.find(a => a.staffId === person.id);
+                                        const isOff = person.offDays.includes(day.day);
+                                        const isRequested = person.requestedDays.includes(day.day);
+                                        const isWeekend = day.isWeekend;
+
+                                        let cellClass = isBlackAndWhite ? "hover:bg-slate-800 cursor-pointer" : "hover:bg-gray-50 cursor-pointer";
+                                        let content = null;
+
+                                        if (assignment) {
+                                            const serviceName = services.find(s => s.id === assignment.serviceId)?.name || '?';
+                                            // Shorten service name
+                                            const shortName = serviceName.length > 8 ? serviceName.substring(0, 6) + '..' : serviceName;
+                                            
+                                            const bgColor = assignment.isEmergency 
+                                                ? (isBlackAndWhite ? 'bg-red-900/50 text-red-200 border-red-900' : 'bg-red-100 text-red-800 border-red-200')
+                                                : (isBlackAndWhite ? 'bg-indigo-900/50 text-indigo-200 border-indigo-900' : 'bg-indigo-50 text-indigo-800 border-indigo-200');
+
+                                            content = (
+                                                <div className={`text-[10px] font-bold text-center py-1 px-0.5 rounded border leading-tight ${bgColor}`} title={serviceName}>
+                                                    {shortName}
+                                                </div>
+                                            );
+                                        } else if (isOff) {
+                                            content = <div className={`text-[10px] text-center font-bold opacity-40 ${isBlackAndWhite ? 'text-gray-500' : 'text-gray-400'}`}>İZİN</div>;
+                                            cellClass += isBlackAndWhite ? " bg-slate-950/30" : " bg-gray-100/50";
+                                        } else if (isRequested) {
+                                             content = <div className={`w-2 h-2 rounded-full mx-auto ${isBlackAndWhite ? 'bg-blue-500' : 'bg-blue-400'}`} title="Nöbet İsteği"></div>
+                                        }
+
+                                        // Apply weekend shading
+                                        if (isWeekend) {
+                                             cellClass += isBlackAndWhite ? " bg-slate-800/30" : " bg-orange-50/30";
+                                        }
+
+                                        return (
+                                            <td 
+                                                key={day.day} 
+                                                className={`p-1 border-r border-b text-center align-middle transition-colors ${isBlackAndWhite ? 'border-slate-800' : 'border-gray-100'} ${cellClass}`}
+                                                onClick={() => !isReadOnly && setEditingStaffSlot({ day: day.day, staffId: person.id })}
+                                            >
+                                                {content}
+                                            </td>
+                                        );
+                                    })}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </Card>
+            )}
+
+            {/* Styled Searchable Dropdown for DAILY Edit */}
             {editingSlot && (
                 <div 
                     className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4 animate-fade-in"
@@ -631,6 +778,57 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                                             </div>
                                         </button>
                                     );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal for STAFF View Edit */}
+            {editingStaffSlot && (
+                <div 
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4 animate-fade-in"
+                    onClick={() => setEditingStaffSlot(null)}
+                >
+                    <div 
+                         className={`rounded-2xl w-full max-w-xs overflow-hidden flex flex-col max-h-[70vh] transition-all transform animate-scale-in ${dropdownClasses}`}
+                         onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className={`p-4 flex justify-between items-center shrink-0 ${dropdownHeaderClasses}`}>
+                             <div>
+                                <h3 className="font-bold text-sm">Nöbet Ata</h3>
+                                <div className="text-[11px] opacity-70 uppercase tracking-wide font-medium mt-0.5">
+                                    {staff.find(s => s.id === editingStaffSlot.staffId)?.name} • {editingStaffSlot.day} {new Date(year, month, editingStaffSlot.day).toLocaleString('tr-TR', {month:'long'})}
+                                </div>
+                             </div>
+                             <button onClick={() => setEditingStaffSlot(null)} className="p-1.5 rounded-full hover:bg-black/10 transition-colors"><X className="w-4 h-4" /></button>
+                        </div>
+                        <div className={`flex-1 overflow-y-auto p-1.5 custom-scrollbar ${isBlackAndWhite ? 'bg-slate-800' : 'bg-white'}`}>
+                            <div className="space-y-1">
+                                <button 
+                                    onClick={() => handleStaffViewUpdate('EMPTY')}
+                                    className={`w-full px-3 py-2.5 text-left rounded-lg flex justify-between items-center group transition-all ${isBlackAndWhite ? 'hover:bg-slate-700' : 'hover:bg-rose-50'}`}
+                                >
+                                    <span className="text-rose-500 font-bold text-sm group-hover:text-rose-600 flex items-center gap-2">
+                                        <X className="w-4 h-4" /> Boşalt
+                                    </span>
+                                </button>
+                                {services.map(s => {
+                                    // Current assignment check?
+                                    const currentAssignment = result.schedule.find(d => d.day === editingStaffSlot.day)?.assignments.find(a => a.staffId === editingStaffSlot.staffId);
+                                    const isActive = currentAssignment?.serviceId === s.id;
+                                    
+                                    return (
+                                        <button 
+                                            key={s.id}
+                                            onClick={() => handleStaffViewUpdate(s.id)}
+                                            className={`w-full px-3 py-2.5 text-left rounded-lg flex justify-between items-center transition-all group ${dropdownItemClasses(isActive)}`}
+                                        >
+                                            <span className={`text-sm font-semibold ${isActive ? (isBlackAndWhite ? 'text-indigo-100' : 'text-indigo-800') : (isBlackAndWhite ? 'text-slate-200' : 'text-gray-700')}`}>{s.name}</span>
+                                            {isActive && <CheckCircle2 className={`w-5 h-5 ${isBlackAndWhite ? 'text-indigo-400' : 'text-indigo-600'}`} />}
+                                        </button>
+                                    )
                                 })}
                             </div>
                         </div>

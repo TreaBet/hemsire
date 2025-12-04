@@ -158,47 +158,95 @@ export class Scheduler {
 
       const currentDayAssignments = dayAssignmentsMap.get(day)!;
       const assignedTodayIds = new Set<string>();
-
       let seniorAssignedToday = false;
 
+      // HELPER: Assign a staff member to a service and update stats
+      const assignToSlot = (candidate: Staff, service: Service) => {
+          currentDayAssignments.push({
+              serviceId: service.id,
+              staffId: candidate.id,
+              staffName: candidate.name,
+              role: candidate.role,
+              group: candidate.group,
+              unit: candidate.unit,
+              isEmergency: service.isEmergency
+          });
+          assignedTodayIds.add(candidate.id);
+          
+          const stats = staffStats.get(candidate.id)!;
+          stats.total++;
+          stats.service++;
+          if (isWeekend) stats.weekend++;
+          if (isSat) stats.saturday++;
+          if (isSun) stats.sunday++;
+
+          if (candidate.role === 1) seniorAssignedToday = true;
+      };
+
+      // --- PHASE 0: PRIORITY SPECIALTY ASSIGNMENT ---
+      // Önce özellikli günlerin (Transplant/Yara vb.) zorunlu personelini ata.
+      // Bu personel boşta varsa ve bugün o özelliğin günü ise, 1 boşluğa kesin o yazılır.
+      for (const constraint of this.config.unitConstraints) {
+          if (constraint.allowedDays.includes(dayOfWeek)) {
+               let targetSpecialty: string | undefined = undefined;
+               if (constraint.unit === 'Transplantasyon') targetSpecialty = 'transplant';
+               if (constraint.unit === 'Yara Bakım') targetSpecialty = 'wound';
+
+               if (targetSpecialty) {
+                   // Check if we already have this specialist assigned (unlikely at start of day loop)
+                   const alreadyAssigned = currentDayAssignments.some(a => {
+                       const s = this.staff.find(st => st.id === a.staffId);
+                       return s?.specialty === targetSpecialty;
+                   });
+
+                   if (!alreadyAssigned) {
+                       // Find a service that needs people and is compatible
+                       // We prioritize 'Genel Cerrahi' type services or services allowing all units
+                       const eligibleServices = [...this.services]
+                            .filter(s => s.minDailyCount > 0)
+                            .sort((a, b) => this.getServiceDifficulty(b) - this.getServiceDifficulty(a));
+
+                       for (const service of eligibleServices) {
+                           // Try to find the specific specialist for this service
+                           const specialistCandidate = this.findBestCandidate(
+                               service, day, assignedTodayIds, dayAssignmentsMap, staffStats,
+                               isWeekend, isSat, isSun, isFri,
+                               { restrictSpecialty: targetSpecialty } // STRICTLY find this specialty
+                           );
+
+                           if (specialistCandidate) {
+                               assignToSlot(specialistCandidate, service);
+                               break; // Found and assigned the specialist for this constraint
+                           }
+                       }
+                   }
+               }
+          }
+      }
+
       // --- PHASE 1: ASSIGN 1 SENIOR (ROLE 1) GLOBALLY ---
-      const shuffledServicesForSenior = [...this.services].sort(() => Math.random() - 0.5);
+      // Only if not assigned in Phase 0
+      if (!seniorAssignedToday) {
+          const shuffledServicesForSenior = [...this.services].sort(() => Math.random() - 0.5);
+          for (const service of shuffledServicesForSenior) {
+              if (seniorAssignedToday) break; 
+              
+              if (!service.allowedRoles.includes(1)) continue;
+              if (service.minDailyCount <= 0) continue;
+              
+              // Check if service is already full (due to Phase 0)
+              const count = currentDayAssignments.filter(a => a.serviceId === service.id).length;
+              if (count >= service.minDailyCount) continue;
 
-      for (const service of shuffledServicesForSenior) {
-          if (seniorAssignedToday) break; 
-          
-          if (!service.allowedRoles.includes(1)) continue;
-          if (service.minDailyCount <= 0) continue;
+              const seniorCandidate = this.findBestCandidate(
+                  service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
+                  isWeekend, isSat, isSun, isFri, 
+                  { restrictRole: 1 } 
+              );
 
-          // Check if this service needs a specialty reservation even for the senior
-          // (Usually seniors are generic, but just in case)
-          
-          const seniorCandidate = this.findBestCandidate(
-              service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
-              isWeekend, isSat, isSun, isFri, 
-              { restrictRole: 1 } 
-          );
-
-          if (seniorCandidate) {
-             currentDayAssignments.push({
-                serviceId: service.id,
-                staffId: seniorCandidate.id,
-                staffName: seniorCandidate.name,
-                role: seniorCandidate.role,
-                group: seniorCandidate.group,
-                unit: seniorCandidate.unit,
-                isEmergency: service.isEmergency
-             });
-             assignedTodayIds.add(seniorCandidate.id);
-             
-             const stats = staffStats.get(seniorCandidate.id)!;
-             stats.total++;
-             stats.service++;
-             if (isWeekend) stats.weekend++;
-             if (isSat) stats.saturday++;
-             if (isSun) stats.sunday++;
-
-             seniorAssignedToday = true;
+              if (seniorCandidate) {
+                 assignToSlot(seniorCandidate, service);
+              }
           }
       }
 
@@ -210,46 +258,16 @@ export class Scheduler {
 
         for (let i = currentServiceCount; i < service.minDailyCount; i++) {
           
-          // --- MANDATORY SPECIALTY RESERVATION LOGIC ---
-          // Check if today is a restricted day for a specific specialty (e.g., Saturday for Transplant)
-          let restrictedSpecialtyForSlot: string | undefined = undefined;
-
-          // Look through constraints
-          for (const constraint of this.config.unitConstraints) {
-               // constraint.unit is essentially the name of the specialty/unit constraint
-               // If today is a restricted day for this constraint
-               if (constraint.allowedDays.includes(dayOfWeek)) {
-                   
-                   // Map constraint name to internal specialty code
-                   let targetSpecialty: string | undefined = undefined;
-                   if (constraint.unit === 'Transplantasyon') targetSpecialty = 'transplant';
-                   if (constraint.unit === 'Yara Bakım') targetSpecialty = 'wound';
-                   
-                   if (targetSpecialty) {
-                       // Check if we already assigned someone with this specialty to this service
-                       const assignedSpecialtyCount = currentDayAssignments.filter(
-                           a => a.serviceId === service.id && 
-                           this.staff.find(s => s.id === a.staffId)?.specialty === targetSpecialty
-                       ).length;
-                       
-                       // If not assigned yet, LOCK this slot
-                       if (assignedSpecialtyCount === 0) {
-                           // Ensure this service actually allows the unit of the specialty staff
-                           // (Since specialty staff are usually 'Genel Cerrahi', and service allows 'Genel Cerrahi', it works)
-                           restrictedSpecialtyForSlot = targetSpecialty;
-                           break; 
-                       }
-                   }
-               }
-          }
-
           // 1. Normal Try
           let bestCandidate = this.findBestCandidate(
               service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
               isWeekend, isSat, isSun, isFri, 
               { 
                   excludeRole: seniorAssignedToday ? 1 : undefined,
-                  restrictSpecialty: restrictedSpecialtyForSlot
+                  // Note: Phase 0 handled strict specialty requirements, so here we don't strictly enforce it
+                  // unless we want to allow *multiple* specialists. 
+                  // But existing logic had check here. We can keep it loose or rely on scoring.
+                  // Let's rely on scoring and Phase 0 having done the heavy lifting.
               } 
           );
 
@@ -260,8 +278,7 @@ export class Scheduler {
                   isWeekend, isSat, isSun, isFri, 
                   { 
                       desperate: true,
-                      excludeRole: seniorAssignedToday ? 1 : undefined,
-                      restrictSpecialty: restrictedSpecialtyForSlot
+                      excludeRole: seniorAssignedToday ? 1 : undefined
                   }
               );
           }
@@ -274,41 +291,21 @@ export class Scheduler {
                   { 
                       desperate: true,
                       deepDesperate: true, // Ignore group preferences
-                      excludeRole: seniorAssignedToday ? 1 : undefined,
-                      restrictSpecialty: restrictedSpecialtyForSlot
+                      excludeRole: seniorAssignedToday ? 1 : undefined
                   }
               );
           }
 
           if (bestCandidate) {
-            currentDayAssignments.push({
-              serviceId: service.id,
-              staffId: bestCandidate.id,
-              staffName: bestCandidate.name,
-              role: bestCandidate.role,
-              group: bestCandidate.group,
-              unit: bestCandidate.unit,
-              isEmergency: service.isEmergency
-            });
-            assignedTodayIds.add(bestCandidate.id);
-            
-            const stats = staffStats.get(bestCandidate.id)!;
-            stats.total++;
-            stats.service++;
-            if (isWeekend) stats.weekend++;
-            if (isSat) stats.saturday++;
-            if (isSun) stats.sunday++;
-
+            assignToSlot(bestCandidate, service);
             currentServiceCount++;
-            if (bestCandidate.role === 1) seniorAssignedToday = true;
-
           } else {
              if (currentDayAssignments.filter(a => a.serviceId === service.id).length < service.minDailyCount) {
                  unfilledSlots++;
                  currentDayAssignments.push({
                     serviceId: service.id,
                     staffId: 'EMPTY',
-                    staffName: restrictedSpecialtyForSlot ? `BOŞ (${restrictedSpecialtyForSlot}!)` : `BOŞ (Min:${service.minDailyCount})`,
+                    staffName: `BOŞ (Min:${service.minDailyCount})`,
                     role: 0,
                     group: 'Genel',
                     unit: '-',
@@ -362,7 +359,7 @@ export class Scheduler {
           if (options.restrictRole !== undefined && person.role !== options.restrictRole) return false;
           if (options.excludeRole !== undefined && person.role === options.excludeRole) return false;
           
-          // CRITICAL: Mandatory Specialty Reservation
+          // CRITICAL: Mandatory Specialty Reservation (Used in Phase 0)
           if (options.restrictSpecialty && person.specialty !== options.restrictSpecialty) return false;
 
           // --- HARD CONSTRAINTS ---
@@ -394,6 +391,8 @@ export class Scheduler {
               
               // C. Specialty Day Constraints
               // If person has specialty, and there is a constraint for that specialty name
+              // BUT: If we are in Phase 0 (restrictSpecialty is set), we implicitly know it's allowed.
+              // If we are in normal phase, we should enforce day restriction for specialty staff.
               if (person.specialty && person.specialty !== 'none') {
                   let specName = '';
                   if (person.specialty === 'transplant') specName = 'Transplantasyon';
@@ -401,10 +400,7 @@ export class Scheduler {
                   
                   const specConstraint = this.config.unitConstraints.find(c => c.unit === specName);
                   if (specConstraint) {
-                      // If constraint exists, they can ONLY work on allowed days (if strictly enforced)
-                      // OR we interpret it as "Priority on these days", but the user asked "Nöbet yazılabilir haftanın günü"
-                      // implying they CANNOT work on other days? 
-                      // Let's assume STRICT restriction for specialty staff.
+                      // If constraint exists, they can ONLY work on allowed days
                       if (!specConstraint.allowedDays.includes(dayOfWeek)) return false;
                   }
               }
@@ -443,13 +439,12 @@ export class Scheduler {
 
           // SCORING LOGIC
 
-          // 1. Mandatory Reservation Bonus
-          // If we are looking for a restricted specialty, they get massive priority
+          // 1. Mandatory Reservation Bonus (Phase 0)
           if (options.restrictSpecialty && person.specialty === options.restrictSpecialty) {
-              score += 200000;
+              score += 500000;
           }
 
-          // 2. Specialty Priority (Fallback)
+          // 2. Specialty Priority (Fallback for Phase 2)
           if (person.specialty && person.specialty !== 'none') {
              let specName = '';
              if (person.specialty === 'transplant') specName = 'Transplantasyon';

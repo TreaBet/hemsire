@@ -1,8 +1,8 @@
 
 import React, { useState, useRef, useMemo } from 'react';
-import { Staff, RoleConfig, Specialty } from '../types';
+import { Staff, RoleConfig, Specialty, Group } from '../types';
 import { Card, Button, DateSelectModal } from './ui';
-import { RefreshCw, FileJson, Upload, CheckCircle2, Circle, Stethoscope, DoorOpen, Layers, X, UserPlus, Trash2, Users, AlertCircle, Star } from 'lucide-react';
+import { RefreshCw, FileJson, Upload, CheckCircle2, Circle, Stethoscope, DoorOpen, Layers, X, UserPlus, Trash2, Users, AlertCircle, Star, Pencil } from 'lucide-react';
 
 interface StaffManagerProps {
     staff: Staff[];
@@ -30,6 +30,9 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
     });
 
     const [dateModal, setDateModal] = useState<{ isOpen: boolean, staffId: string, type: 'off' | 'request' } | null>(null);
+
+    // Editing State
+    const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
 
     // Bulk Edit State
     const [showBulkModal, setShowBulkModal] = useState(false);
@@ -72,6 +75,12 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
             }
             return s;
         }));
+    };
+
+    const handleEditSave = () => {
+        if (!editingStaff) return;
+        setStaff(prev => prev.map(s => s.id === editingStaff.id ? editingStaff : s));
+        setEditingStaff(null);
     };
 
     const openDateModal = (staffId: string, type: 'off' | 'request') => {
@@ -237,6 +246,19 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                             {person.isActive !== false ? <CheckCircle2 className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
                         </button>
                         
+                        {/* Edit Button */}
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setEditingStaff({...person}); }} 
+                            className={`absolute top-3 right-10 transition-colors z-20 p-1 rounded-full ${
+                                isBlackAndWhite 
+                                ? 'text-gray-600 hover:text-indigo-400 hover:bg-slate-800' 
+                                : 'text-gray-300 hover:text-indigo-500 hover:bg-indigo-50'
+                            }`}
+                            title="Personeli Düzenle"
+                        >
+                            <Pencil className="w-4 h-4" />
+                        </button>
+
                         <button 
                             onClick={(e) => handleDeleteStaff(e, person.id)} 
                             className={`absolute top-3 right-3 transition-colors z-20 p-1 rounded-full ${
@@ -349,6 +371,81 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                         <div className={`p-4 border-t flex justify-end gap-3 ${isBlackAndWhite ? 'bg-slate-800 border-slate-700' : 'bg-gray-50 border-gray-100'}`}>
                             <Button variant="ghost" onClick={() => setShowBulkModal(false)} className={isBlackAndWhite ? 'text-gray-400 hover:text-white' : ''}>İptal</Button>
                             <Button onClick={applyBulkUpdate}>Uygula</Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Individual Edit Modal */}
+            {editingStaff && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className={`bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-in border ${isBlackAndWhite ? '!bg-slate-900 !border-slate-800 text-white' : 'border-gray-200'}`}>
+                        <div className={`p-4 border-b flex justify-between items-center ${isBlackAndWhite ? 'bg-slate-800 border-slate-700' : 'bg-gray-50 border-gray-100'}`}>
+                            <h3 className="font-bold text-lg">Personel Düzenle</h3>
+                            <button onClick={() => setEditingStaff(null)} className="p-1 rounded-full hover:bg-black/10"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="col-span-2">
+                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Ad Soyad</label>
+                                    <input type="text" value={editingStaff.name} onChange={e => setEditingStaff({...editingStaff, name: e.target.value})} className={inputClass} />
+                                </div>
+                                <div>
+                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Branş</label>
+                                    <input type="text" value={editingStaff.unit} onChange={e => setEditingStaff({...editingStaff, unit: e.target.value})} className={inputClass} list="unit-suggestions" />
+                                    <datalist id="unit-suggestions">
+                                        <option value="Genel Cerrahi" />
+                                        <option value="KBB" />
+                                        <option value="Beyin ve Ortopedi" />
+                                        <option value="Plastik" />
+                                    </datalist>
+                                </div>
+                                <div>
+                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Salon</label>
+                                    <input type="text" value={editingStaff.room} onChange={e => setEditingStaff({...editingStaff, room: e.target.value})} className={inputClass} />
+                                </div>
+                                <div>
+                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Kıdem</label>
+                                    <select value={editingStaff.role} onChange={e => setEditingStaff({...editingStaff, role: parseInt(e.target.value)})} className={inputClass}>
+                                        <option value={1}>1 - Kıdemli</option>
+                                        <option value={2}>2 - Tecrübeli</option>
+                                        <option value={3}>3 - Yeni/Çömez</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Grup</label>
+                                    <select value={editingStaff.group} onChange={e => setEditingStaff({...editingStaff, group: e.target.value as Group})} className={inputClass}>
+                                        <option value="A">A</option>
+                                        <option value="B">B</option>
+                                        <option value="C">C</option>
+                                        <option value="D">D</option>
+                                    </select>
+                                </div>
+                                <div className="col-span-2">
+                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Özellik Durumu</label>
+                                    <select value={editingStaff.specialty || 'none'} onChange={e => setEditingStaff({...editingStaff, specialty: e.target.value as Specialty})} className={inputClass}>
+                                        <option value="none">Özellik Yok (Normal)</option>
+                                        <option value="transplant">Transplantasyon</option>
+                                        <option value="wound">Yara Bakım</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Servis Hedef</label>
+                                    <input type="number" value={editingStaff.quotaService} onChange={e => setEditingStaff({...editingStaff, quotaService: parseInt(e.target.value) || 0})} className={inputClass} />
+                                </div>
+                                <div>
+                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Acil Hedef</label>
+                                    <input type="number" value={editingStaff.quotaEmergency} onChange={e => setEditingStaff({...editingStaff, quotaEmergency: parseInt(e.target.value) || 0})} className={inputClass} />
+                                </div>
+                                <div>
+                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Haftasonu Limit</label>
+                                    <input type="number" value={editingStaff.weekendLimit} onChange={e => setEditingStaff({...editingStaff, weekendLimit: parseInt(e.target.value) || 0})} className={inputClass} />
+                                </div>
+                            </div>
+                        </div>
+                        <div className={`p-4 border-t flex justify-end gap-3 ${isBlackAndWhite ? 'bg-slate-800 border-slate-700' : 'bg-gray-50 border-gray-100'}`}>
+                            <Button variant="ghost" onClick={() => setEditingStaff(null)} className={isBlackAndWhite ? 'text-gray-400 hover:text-white' : ''}>İptal</Button>
+                            <Button onClick={handleEditSave}>Değişiklikleri Kaydet</Button>
                         </div>
                     </div>
                 </div>
