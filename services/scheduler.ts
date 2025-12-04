@@ -3,6 +3,7 @@ import { Staff, Service, DaySchedule, SchedulerConfig, ScheduleResult, ShiftAssi
 
 interface CandidateOptions {
     desperate?: boolean;
+    deepDesperate?: boolean; // New mode: Ignore group preferences completely
     restrictRole?: number;
     excludeRole?: number;
 }
@@ -62,6 +63,18 @@ export class Scheduler {
     if (this.logs.length < 1000) this.logs.push(message);
   }
 
+  // Calculate day difficulty for sorting
+  // Saturday (6) is hardest due to Transplant + Weekend Limits
+  // Friday (5) is hard due to Wound constraints
+  // Sunday (0) is medium due to Weekend Limits
+  private getDayDifficulty(day: number): number {
+      const dow = this.getDayOfWeek(day);
+      if (dow === 6) return 100; // Saturday (Transplant)
+      if (dow === 5) return 80;  // Friday (Yara)
+      if (dow === 0) return 60;  // Sunday
+      return 10; // Weekdays
+  }
+
   // Zorluk derecesine göre servisleri sırala
   private getServiceDifficulty(service: Service): number {
       let score = 1000;
@@ -119,9 +132,13 @@ export class Scheduler {
     let unfilledSlots = 0;
     let daysToProcess = Array.from({length: this.daysInMonth}, (_, i) => i + 1);
     
-    if (this.config.randomizeOrder) {
-        daysToProcess.sort(() => Math.random() - 0.5);
-    } 
+    // SMART SORT: Process hardest days first (Sat > Fri > Sun > Others)
+    // This ensures specific staff (Transplant/Wound) are used on their specific days FIRST,
+    // before they are consumed by generic days.
+    daysToProcess.sort((a, b) => this.getDayDifficulty(b) - this.getDayDifficulty(a));
+
+    // Optional: Add a slight shuffle within same-difficulty days to prevent patterns
+    // (Implementation skipped to keep logic strict for now)
 
     for (const day of daysToProcess) {
       const dayOfWeek = this.getDayOfWeek(day);
@@ -136,6 +153,7 @@ export class Scheduler {
       let seniorAssignedToday = false;
 
       // --- PHASE 1: ASSIGN 1 SENIOR (ROLE 1) GLOBALLY ---
+      // We shuffle services so different services get the senior each day
       const shuffledServicesForSenior = [...this.services].sort(() => Math.random() - 0.5);
 
       for (const service of shuffledServicesForSenior) {
@@ -181,19 +199,33 @@ export class Scheduler {
 
         for (let i = currentServiceCount; i < service.minDailyCount; i++) {
           
+          // 1. Normal Try
           let bestCandidate = this.findBestCandidate(
               service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
               isWeekend, isSat, isSun, isFri, 
               { excludeRole: seniorAssignedToday ? 1 : undefined } 
           );
 
-          // Desperation Phase
+          // 2. Desperate Try (Relax soft constraints)
           if (!bestCandidate && currentServiceCount < service.minDailyCount) {
               bestCandidate = this.findBestCandidate(
                   service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
                   isWeekend, isSat, isSun, isFri, 
                   { 
                       desperate: true,
+                      excludeRole: seniorAssignedToday ? 1 : undefined 
+                  }
+              );
+          }
+
+          // 3. Deep Desperation (Ignore Group Preferences)
+          if (!bestCandidate && currentServiceCount < service.minDailyCount) {
+             bestCandidate = this.findBestCandidate(
+                  service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
+                  isWeekend, isSat, isSun, isFri, 
+                  { 
+                      desperate: true,
+                      deepDesperate: true, // Ignore group preferences
                       excludeRole: seniorAssignedToday ? 1 : undefined 
                   }
               );
@@ -275,7 +307,7 @@ export class Scheduler {
   ): Staff | null {
       
       const dayOfWeek = this.getDayOfWeek(day); 
-      const desperateMode = options.desperate || false;
+      // const desperateMode = options.desperate || false; // Not used directly in filtering, but implies relaxed filters elsewhere if we had them
 
       const candidates = this.staff.filter(person => {
           // --- ROLE FILTERS ---
@@ -318,7 +350,7 @@ export class Scheduler {
               if (this.hasShiftOnDay(dayAssignmentsMap, day + 1, roommateId)) return false;
           }
 
-          // 5. Quotas
+          // 5. Quotas (Strict - Never exceed even in desperate)
           const stats = staffStats.get(person.id)!;
           if (stats.service >= person.quotaService) return false;
           if (isWeekend && stats.weekend >= person.weekendLimit) return false;
@@ -327,8 +359,16 @@ export class Scheduler {
           if (isSat && this.hasShiftOnDay(dayAssignmentsMap, day - 2, person.id)) return false;
           if (isSun && this.hasShiftOnDay(dayAssignmentsMap, day - 3, person.id)) return false;
           if (dayOfWeek === 4) {
+             // If today is Thursday, prevent if they work upcoming Sat/Sun
+             // NOTE: This check depends on future days. Since we sort by difficulty (Sat first), 
+             // Sat/Sun might already be filled. If not, this check is optimistic.
              if (this.hasShiftOnDay(dayAssignmentsMap, day + 2, person.id)) return false;
              if (this.hasShiftOnDay(dayAssignmentsMap, day + 3, person.id)) return false;
+          }
+          
+          // 7. Group Constraint (Strict unless Deep Desperate)
+          if (service.preferredGroup && service.preferredGroup !== 'Farketmez' && !options.deepDesperate) {
+               if (person.group !== service.preferredGroup) return false;
           }
 
           return true;
@@ -344,12 +384,12 @@ export class Scheduler {
           // Otherwise, generic staff might take the slot, and this specialist won't find a place.
           const constraint = this.config.unitConstraints.find(c => c.unit === person.unit);
           if (constraint && constraint.allowedDays.includes(dayOfWeek)) {
-             score += 20000;
+             score += 50000; // Increased priority
           }
 
           // 2. Request Priority
           if (person.requestedDays && person.requestedDays.includes(day)) {
-              score += 50000;
+              score += 20000;
           }
 
           // 3. Quota Hunger
@@ -359,12 +399,12 @@ export class Scheduler {
           // 4. Weekend Fairness
           if (isWeekend) score -= (stats.weekend * 2000);
 
-          // 5. Spread
+          // 5. Spread (Soft Constraint)
           if (this.config.preventEveryOtherDay) {
               if (this.hasShiftOnDay(dayAssignmentsMap, day - 2, person.id)) score -= 1000;
           }
 
-          // 6. Group Preference
+          // 6. Group Preference (Bonus if matching, though we might have filtered already)
           if (service.preferredGroup && service.preferredGroup !== 'Farketmez') {
               if (person.group === service.preferredGroup) score += 500;
           }

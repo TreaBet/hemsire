@@ -23,19 +23,20 @@ export const ICONS = {
     Room: <DoorOpen className="w-4 h-4" />
 };
 
-// Kullanıcı isteği üzerine varsayılan personel listesi BOŞALTILDI.
 export const MOCK_STAFF = [] as const;
 
 export const MOCK_SERVICES = [
-  // Genel Cerrahi artık Transplantasyon ve Yara birimlerini de kapsıyor. 
-  // Min/Max 2 kişi. Eğer o gün Transplantasyon nöbetçisi varsa, o 1 kişilik yeri kaplar, geriye 1 Genel Cerrahi kalır.
+  // Genel Cerrahi: Min 2, Max 2.
+  // İzin verilen birimlere 'Transplantasyon' ve 'Yara' eklendi.
+  // Sistem önce zorlu günlerde (Cmt/Cuma) kısıtlı birimleri (Trans/Yara) atayacak,
+  // yanına bir Genel Cerrahi koyacak. Böylece toplam 2 kişi olacak.
   { 
       id: 's1', 
       name: 'Genel Cerrahi Nöbeti', 
       minDailyCount: 2, 
       maxDailyCount: 2, 
       allowedRoles: [1, 2, 3], 
-      allowedUnits: ['Genel Cerrahi', 'Transplantasyon', 'Yara'], // Birleştirilmiş Birimler
+      allowedUnits: ['Genel Cerrahi', 'Transplantasyon', 'Yara'], 
       preferredGroup: 'Farketmez', 
       isEmergency: false 
   },
