@@ -1,12 +1,11 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Scheduler } from './services/scheduler';
 import { readStaffFromExcel } from './services/excelService';
 import { exportToExcel, generateTemplate } from './services/excelService';
 import { exportToJSON, importFromJSON } from './services/backupService';
 import { generateShareLink, parseShareLink } from './services/shareService';
-import { Staff, Service, RoleConfig, ScheduleResult } from './types';
-import { ICONS, MOCK_STAFF, MOCK_SERVICES } from './constants';
+import { Staff, Service, RoleConfig, ScheduleResult, UnitConstraint } from './types';
+import { ICONS, MOCK_STAFF, MOCK_SERVICES, DEFAULT_UNIT_CONSTRAINTS } from './constants';
 import { Card, Button } from './components/ui';
 import { Moon, Sun, ShieldCheck, CheckCircle2, BrainCircuit, Info, X, Check, Eye, Link as LinkIcon, Copy, Zap, FileSpreadsheet, MousePointerClick } from 'lucide-react';
 import { StaffManager } from './components/StaffManager';
@@ -50,6 +49,7 @@ export default function App() {
 
   const [services, setServices] = useState<Service[]>(() => loadState('nobet_services', MOCK_SERVICES as unknown as Service[]));
   const [roleConfigs, setRoleConfigs] = useState<Record<number, RoleConfig>>(() => loadState('nobet_roleConfigs', {}));
+  const [unitConstraints, setUnitConstraints] = useState<UnitConstraint[]>(() => loadState('nobet_constraints', DEFAULT_UNIT_CONSTRAINTS));
   
   // Generator Config Persistence
   const [month, setMonth] = useState(() => loadState('nobet_month', new Date().getMonth()));
@@ -97,6 +97,7 @@ export default function App() {
   useEffect(() => { if(!isReadOnly) localStorage.setItem('nobet_staff', JSON.stringify(staff)); }, [staff, isReadOnly]);
   useEffect(() => { if(!isReadOnly) localStorage.setItem('nobet_services', JSON.stringify(services)); }, [services, isReadOnly]);
   useEffect(() => { if(!isReadOnly) localStorage.setItem('nobet_roleConfigs', JSON.stringify(roleConfigs)); }, [roleConfigs, isReadOnly]);
+  useEffect(() => { if(!isReadOnly) localStorage.setItem('nobet_constraints', JSON.stringify(unitConstraints)); }, [unitConstraints, isReadOnly]);
   useEffect(() => { if(!isReadOnly) localStorage.setItem('nobet_month', JSON.stringify(month)); }, [month, isReadOnly]);
   useEffect(() => { if(!isReadOnly) localStorage.setItem('nobet_year', JSON.stringify(year)); }, [year, isReadOnly]);
   useEffect(() => { if(!isReadOnly) localStorage.setItem('nobet_randomize', JSON.stringify(randomizeDays)); }, [randomizeDays, isReadOnly]);
@@ -142,7 +143,7 @@ export default function App() {
   };
 
   const handleExportBackup = () => {
-    exportToJSON(staff, services, roleConfigs, { month, year, randomizeDays, preventEveryOther });
+    exportToJSON(staff, services, roleConfigs, { month, year, randomizeDays, preventEveryOther }, unitConstraints);
   };
 
   const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,6 +153,7 @@ export default function App() {
             if (Array.isArray(data.staff)) setStaff(data.staff);
             if (Array.isArray(data.services)) setServices(data.services);
             if (data.roleConfigs) setRoleConfigs(data.roleConfigs);
+            if (Array.isArray(data.unitConstraints)) setUnitConstraints(data.unitConstraints);
             if (data.config) {
                 setMonth(data.config.month);
                 setYear(data.config.year);
@@ -172,7 +174,7 @@ export default function App() {
     setTimeout(() => {
       try {
         const scheduler = new Scheduler(staff, services, {
-          year, month, maxRetries: monteCarloIters, randomizeOrder: randomizeDays, preventEveryOtherDay: preventEveryOther
+          year, month, maxRetries: monteCarloIters, randomizeOrder: randomizeDays, preventEveryOtherDay: preventEveryOther, unitConstraints
         });
         const res = scheduler.generate();
         setResult(res);
@@ -373,7 +375,11 @@ export default function App() {
         {/* TAB: SERVICES */}
         {activeTab === 'services' && !isReadOnly && (
           <ServiceManager 
-            services={services} setServices={setServices} staff={staff} isBlackAndWhite={isBlackAndWhite}
+            services={services} setServices={setServices} 
+            staff={staff} 
+            isBlackAndWhite={isBlackAndWhite}
+            unitConstraints={unitConstraints}
+            setUnitConstraints={setUnitConstraints}
           />
         )}
 

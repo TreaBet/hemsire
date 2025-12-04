@@ -1,5 +1,4 @@
-
-import { Staff, Service, RoleConfig } from '../types';
+import { Staff, Service, RoleConfig, UnitConstraint } from '../types';
 
 export interface AppData {
     version: string;
@@ -7,6 +6,7 @@ export interface AppData {
     staff: Staff[];
     services: Service[];
     roleConfigs: Record<number, RoleConfig>;
+    unitConstraints?: UnitConstraint[];
     config: {
         month: number;
         year: number;
@@ -19,7 +19,8 @@ export const exportToJSON = (
     staff: Staff[],
     services: Service[],
     roleConfigs: Record<number, RoleConfig>,
-    config: { month: number; year: number; randomizeDays: boolean; preventEveryOther: boolean }
+    config: { month: number; year: number; randomizeDays: boolean; preventEveryOther: boolean },
+    unitConstraints: UnitConstraint[] = []
 ) => {
     const data: AppData = {
         version: "2.0",
@@ -27,6 +28,7 @@ export const exportToJSON = (
         staff,
         services,
         roleConfigs,
+        unitConstraints,
         config
     };
 

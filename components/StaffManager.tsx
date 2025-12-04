@@ -205,9 +205,13 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                          <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>HEDEF</label>
                          <input type="number" value={newStaff.quotaService} onChange={e => setNewStaff({...newStaff, quotaService: parseInt(e.target.value) || 0})} className={inputClass} />
                     </div>
-                    <div className="md:col-span-2">
+                    <div className="md:col-span-1">
+                         <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>HS LİMİT</label>
+                         <input type="number" value={newStaff.weekendLimit} onChange={e => setNewStaff({...newStaff, weekendLimit: parseInt(e.target.value) || 0})} className={inputClass} />
+                    </div>
+                    <div className="md:col-span-1">
                         <Button onClick={handleAddStaff} className={`w-full h-[42px] ${isBlackAndWhite ? '!bg-indigo-600 !border-indigo-500 text-white' : ''}`}>
-                            <UserPlus className="w-4 h-4" /> Ekle
+                            <UserPlus className="w-4 h-4" />
                         </Button>
                     </div>
                 </div>
@@ -273,10 +277,14 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                              </div>
                         </div>
 
-                        <div className={`grid grid-cols-2 gap-2 text-center text-xs p-2 rounded-lg mb-4 ${isBlackAndWhite ? 'bg-slate-800' : 'bg-white shadow-sm border border-gray-100'}`}>
+                        <div className={`grid grid-cols-3 gap-2 text-center text-xs p-2 rounded-lg mb-4 ${isBlackAndWhite ? 'bg-slate-800' : 'bg-white shadow-sm border border-gray-100'}`}>
                              <div>
                                  <div className={`font-bold ${person.isActive !== false ? 'text-indigo-500' : 'text-gray-400'}`}>{person.quotaService}</div>
                                  <div className="opacity-60">Hedef</div>
+                             </div>
+                             <div>
+                                 <div className={`font-bold ${person.isActive !== false ? 'text-rose-500' : 'text-gray-400'}`}>{person.weekendLimit}</div>
+                                 <div className="opacity-60">HS Limit</div>
                              </div>
                              <div>
                                  <div className={`font-bold ${person.isActive !== false ? 'text-purple-500' : 'text-gray-400'}`}>{person.role === 1 ? 'Kıdemli' : (person.role === 2 ? 'Tecrübeli' : 'Yeni')}</div>
@@ -355,9 +363,4 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                     }
                     onSave={handleDateSave}
                     daysInMonth={daysInMonth}
-                    color={dateModal.type === 'off' ? 'red' : 'green'}
-                />
-            )}
-        </div>
-    );
-};
+                    color={dateModal.type

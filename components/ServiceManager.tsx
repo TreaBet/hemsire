@@ -1,18 +1,22 @@
-
 import React, { useState, useMemo } from 'react';
-import { Service, Staff, Group } from '../types';
+import { Service, Staff, Group, UnitConstraint } from '../types';
 import { Card, Button, Badge, MultiSelect } from './ui';
 import { ICONS } from '../constants';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, Calendar, Check, X } from 'lucide-react';
 
 interface ServiceManagerProps {
     services: Service[];
     setServices: (services: Service[]) => void;
     staff: Staff[];
     isBlackAndWhite: boolean;
+    unitConstraints?: UnitConstraint[];
+    setUnitConstraints?: React.Dispatch<React.SetStateAction<UnitConstraint[]>>;
 }
 
-export const ServiceManager: React.FC<ServiceManagerProps> = ({ services, setServices, staff, isBlackAndWhite }) => {
+export const ServiceManager: React.FC<ServiceManagerProps> = ({ 
+    services, setServices, staff, isBlackAndWhite,
+    unitConstraints = [], setUnitConstraints
+}) => {
     const [newService, setNewService] = useState<Partial<Service>>({ 
         name: '', minDailyCount: 1, maxDailyCount: 1, allowedRoles: [1, 2, 3], priorityRoles: [], preferredGroup: 'Farketmez', isEmergency: false 
     });
@@ -20,6 +24,12 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({ services, setSer
     const [draggedServiceId, setDraggedServiceId] = useState<string | null>(null);
 
     const uniqueRoles = useMemo(() => Array.from(new Set(staff.map(s => s.role))).sort((a: number, b: number) => a - b), [staff]);
+    
+    // Get unique units from staff
+    const uniqueUnits = useMemo(() => {
+        const units = new Set(staff.map(s => s.unit || "").filter(u => u.trim() !== ""));
+        return Array.from(units).sort();
+    }, [staff]);
 
     const handleAddService = () => {
         if (!newService.name) return;
@@ -35,7 +45,6 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({ services, setSer
     const handleDragStart = (e: React.DragEvent, id: string) => {
         setDraggedServiceId(id);
         e.dataTransfer.effectAllowed = 'move';
-        // Görünmez bir sürükleme imajı veya opaklık ayarı eklenebilir
     };
 
     const handleDragOver = (e: React.DragEvent) => {
@@ -53,15 +62,64 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({ services, setSer
 
         if (sourceIndex === -1 || targetIndex === -1) return;
 
-        // Elemanı listeden çıkar ve yeni yerine ekle
         const [movedService] = newServices.splice(sourceIndex, 1);
         newServices.splice(targetIndex, 0, movedService);
 
         setServices(newServices);
         setDraggedServiceId(null);
     };
+    
+    // --- Unit Constraint Handlers ---
+    const toggleUnitDay = (unitName: string, dayIndex: number) => {
+        if (!setUnitConstraints) return;
+        
+        // Find existing
+        const existingIdx = unitConstraints.findIndex(c => c.unit === unitName);
+        let newConstraints = [...unitConstraints];
+        
+        if (existingIdx === -1) {
+            // New constraint, start with all days enabled EXCEPT the one toggled? 
+            // Or start with none? Usually better to start with "Only this day" if user clicks.
+            // But here we show buttons. Let's assume if no constraint exists, it means ALL days allowed.
+            // So if user clicks a day, they probably want to restrict.
+            // Actually, if no constraint object exists, logic says "Any day".
+            // So if user creates a constraint object, we should populate it with current state.
+            // Strategy: If user clicks a day, we create constraint with that day toggled OFF (since default is ON).
+            // Wait, standard UI: Button active = Allowed. Button inactive = Restricted.
+            // Default (No object) = All Active.
+            // So clicking a day means "Disable this day".
+            
+            // Create object with all days allowed (0..6)
+            const allDays = [0,1,2,3,4,5,6];
+            // Remove the clicked day
+            const newAllowed = allDays.filter(d => d !== dayIndex);
+            newConstraints.push({ unit: unitName, allowedDays: newAllowed });
+        } else {
+            const current = newConstraints[existingIdx];
+            if (current.allowedDays.includes(dayIndex)) {
+                // Remove it
+                current.allowedDays = current.allowedDays.filter(d => d !== dayIndex);
+            } else {
+                // Add it
+                current.allowedDays = [...current.allowedDays, dayIndex].sort();
+            }
+            
+            // Cleanup: If all days allowed, remove constraint object to save space/logic
+            if (current.allowedDays.length === 7) {
+                newConstraints = newConstraints.filter((_, i) => i !== existingIdx);
+            } else {
+                newConstraints[existingIdx] = current;
+            }
+        }
+        setUnitConstraints(newConstraints);
+    };
+    
+    const isDayAllowed = (unitName: string, dayIndex: number) => {
+        const constraint = unitConstraints.find(c => c.unit === unitName);
+        if (!constraint) return true; // Default allow all
+        return constraint.allowedDays.includes(dayIndex);
+    };
 
-    // Shared input styles
     const inputClass = `w-full rounded-lg shadow-sm p-2.5 border focus:ring-2 focus:ring-indigo-500 outline-none transition-colors ${
         isBlackAndWhite 
         ? '!bg-slate-800 !border-slate-700 text-white placeholder-slate-400' 
@@ -73,6 +131,8 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({ services, setSer
         ? '!bg-slate-800 !border-slate-700 text-white placeholder-slate-400' 
         : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
     }`;
+    
+    const days = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -82,6 +142,49 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({ services, setSer
                   <p className={`mt-1 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Servisleri sürükleyip bırakarak sıralamayı değiştirebilirsiniz. Bu sıralama Excel çıktısında kullanılır.</p>
               </div>
             </div>
+            
+            {/* Unit Constraints Section */}
+            {setUnitConstraints && (
+                <Card className={`p-6 border-l-4 transition-colors ${isBlackAndWhite ? '!bg-slate-900 !border-slate-800 border-l-blue-500' : 'border-l-blue-500'}`}>
+                    <h3 className={`font-bold text-lg mb-4 flex items-center gap-2 ${isBlackAndWhite ? 'text-white' : 'text-gray-900'}`}>
+                        <Calendar className="w-5 h-5"/> Birim Çalışma Günleri
+                    </h3>
+                    <p className={`text-sm mb-4 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-600'}`}>
+                        Belirli branşların sadece haftanın belirli günlerinde nöbet tutmasını istiyorsanız buradan ayarlayabilirsiniz.
+                        (Yeşil: Nöbet Yazılabilir, Gri: Yazılamaz)
+                    </p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {uniqueUnits.map(unit => (
+                            <div key={unit} className={`p-3 rounded-lg border ${isBlackAndWhite ? 'border-slate-700 bg-slate-800' : 'border-gray-200 bg-gray-50'}`}>
+                                <div className={`font-bold text-sm mb-2 ${isBlackAndWhite ? 'text-white' : 'text-gray-800'}`}>{unit}</div>
+                                <div className="flex justify-between gap-1">
+                                    {days.map((d, idx) => {
+                                        const allowed = isDayAllowed(unit, idx);
+                                        return (
+                                            <button 
+                                                key={idx}
+                                                onClick={() => toggleUnitDay(unit, idx)}
+                                                className={`flex-1 py-1 rounded text-[10px] font-bold transition-all ${
+                                                    allowed 
+                                                    ? 'bg-emerald-500 text-white shadow-sm hover:bg-emerald-600' 
+                                                    : (isBlackAndWhite ? 'bg-slate-900 text-slate-600' : 'bg-gray-200 text-gray-400')
+                                                }`}
+                                                title={allowed ? "Nöbet Yazılabilir" : "Nöbet Yazılamaz"}
+                                            >
+                                                {d}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+                        {uniqueUnits.length === 0 && (
+                            <div className={`text-sm italic ${isBlackAndWhite ? 'text-gray-500' : 'text-gray-400'}`}>Personel eklediğinizde branşlar burada listelenecektir.</div>
+                        )}
+                    </div>
+                </Card>
+            )}
             
             <Card className={`p-6 border-l-4 transition-colors ${isBlackAndWhite ? '!bg-slate-900 !border-slate-800 border-l-emerald-500' : 'border-l-indigo-500'}`}>
               <div className="grid grid-cols-1 md:grid-cols-6 gap-6 items-start">

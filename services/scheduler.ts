@@ -189,11 +189,6 @@ export class Scheduler {
         for (let i = currentServiceCount; i < service.minDailyCount; i++) {
           
           // CRITICAL: If a senior was assigned in Phase 1, we BAN seniors in Phase 2.
-          // If NO senior was assigned (rare, but possible if all off), we allow seniors to fill slots but prioritize them?
-          // Actually, if Phase 1 failed, it means no Role 1 was available for ANY service. 
-          // So excluding them here doesn't hurt, or including them doesn't matter.
-          // We strictly exclude Role 1 if seniorAssignedToday is true.
-          
           let bestCandidate = this.findBestCandidate(
               service, day, assignedTodayIds, dayAssignmentsMap, staffStats, 
               isWeekend, isSat, isSun, isFri, 
@@ -329,12 +324,14 @@ export class Scheduler {
               if (this.hasShiftOnDay(dayAssignmentsMap, day + 1, roommateId)) return false;
           }
 
-          // 5. Special Units
-          if (person.unit === 'Transplantasyon') {
-              if (!isSat) return false; // Only Saturday
-          }
-          if (person.unit === 'Yara') {
-              if (!isFri) return false; // Only Friday
+          // 5. Special Unit Constraints (Dynamic)
+          // Look up if this unit has any restrictions
+          if (!isNewNurse) {
+              const constraint = this.config.unitConstraints.find(c => c.unit === person.unit);
+              if (constraint) {
+                  // If constraint exists, person can ONLY work on allowed days
+                  if (!constraint.allowedDays.includes(dayOfWeek)) return false;
+              }
           }
 
           // 6. Quotas

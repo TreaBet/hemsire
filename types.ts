@@ -17,6 +17,11 @@ export interface Staff {
   isActive: boolean; // Listeye dahil mi?
 }
 
+export interface UnitConstraint {
+    unit: string;
+    allowedDays: number[]; // 0=Pazar, 1=Pzt, ..., 6=Cmt
+}
+
 export interface RoleConfig {
   role: number;
   quotaService: number;
@@ -74,5 +79,6 @@ export interface SchedulerConfig {
   month: number; 
   maxRetries: number;
   randomizeOrder: boolean; 
-  preventEveryOtherDay: boolean; 
+  preventEveryOtherDay: boolean;
+  unitConstraints: UnitConstraint[];
 }
