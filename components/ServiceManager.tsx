@@ -34,15 +34,15 @@ export const ServiceManager: React.FC<ServiceManagerProps> = ({
     
     // Constraint Targets (Includes specialties)
     const uniqueConstraintTargets = useMemo(() => {
-        const units = new Set(staff.map(s => (s.unit || "").trim()));
+        const units = new Set<string>(staff.map(s => (s.unit || "").trim()));
         // Add specific specialty names that map to logic
         customSpecialties.forEach(s => units.add(s));
-        return Array.from(units).filter(u => u.length > 0).sort();
+        return Array.from(units).filter((u: string) => u.length > 0).sort();
     }, [staff, customSpecialties]);
 
     // Unique Staff Units (For Service Filtering)
     const uniqueStaffUnits = useMemo(() => {
-        const units = new Set(staff.map(s => (s.unit || "").trim()));
+        const units = new Set<string>(staff.map(s => (s.unit || "").trim()));
         return Array.from(units).filter((u: string) => u.length > 0).sort();
     }, [staff]);
 

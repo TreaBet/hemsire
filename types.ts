@@ -74,3 +74,15 @@ export interface SchedulerConfig {
   unitConstraints: UnitConstraint[];
   dailyTotalTarget: number; // GÜNLÜK TOPLAM NÖBETÇİ HEDEFİ
 }
+
+export interface Preset {
+    id: string;
+    name: string;
+    description: string;
+    staff: Staff[];
+    services: Service[];
+    customUnits: string[];
+    customSpecialties: string[];
+    dailyTotalTarget: number;
+    unitConstraints: UnitConstraint[];
+}

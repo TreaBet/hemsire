@@ -1,15 +1,14 @@
 
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Scheduler } from './services/scheduler';
 import { readStaffFromExcel } from './services/excelService';
 import { exportToExcel, generateTemplate } from './services/excelService';
 import { exportToJSON, importFromJSON } from './services/backupService';
 import { generateShareLink, parseShareLink } from './services/shareService';
-import { Staff, Service, RoleConfig, ScheduleResult, UnitConstraint } from './types';
+import { Staff, Service, RoleConfig, ScheduleResult, UnitConstraint, Preset } from './types';
 import { ICONS, MOCK_STAFF, MOCK_SERVICES, DEFAULT_UNIT_CONSTRAINTS } from './constants';
 import { Card, Button } from './components/ui';
-import { Moon, Sun, ShieldCheck, CheckCircle2, BrainCircuit, Info, X, Check, Eye, Link as LinkIcon, Copy, Zap, FileSpreadsheet, MousePointerClick, BookOpen, Settings2 } from 'lucide-react';
+import { Moon, Sun, ShieldCheck, CheckCircle2, Activity, Info, X, Check, Eye, Link as LinkIcon, Copy, Zap, FileSpreadsheet, MousePointerClick, BookOpen, Settings2, Users, AlertTriangle, Layers, DoorOpen } from 'lucide-react';
 import { StaffManager } from './components/StaffManager';
 import { ServiceManager } from './components/ServiceManager';
 import { ScheduleViewer } from './components/ScheduleViewer';
@@ -46,7 +45,7 @@ export default function App() {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [infoTab, setInfoTab] = useState<'about' | 'manual'>('manual');
   
-  // --- PERSISTENT STATE ---
+  // --- PERSISTENT STATE (LocalStorage) ---
   
   // Custom Metadata State
   const [customUnits, setCustomUnits] = useState<string[]>(() => loadState('nobet_units', DEFAULT_UNITS));
@@ -55,6 +54,7 @@ export default function App() {
   // Load staff and ensure every staff member has 'isActive' property (migration for old data)
   const [staff, setStaff] = useState<Staff[]>(() => {
       const loaded = loadState('nobet_staff', MOCK_STAFF as unknown as Staff[]);
+      if (!Array.isArray(loaded)) return [];
       return loaded.map(s => {
           let sNew = { ...s, isActive: s.isActive !== undefined ? s.isActive : true };
           // Migration for old specialty keys to new display names
@@ -75,11 +75,13 @@ export default function App() {
   const [preventEveryOther, setPreventEveryOther] = useState(() => loadState('nobet_preventEveryOther', true));
   const [dailyTotalTarget, setDailyTotalTarget] = useState(() => loadState('nobet_dailyTotalTarget', 6)); // Default 6 nurses per day
   const [isBlackAndWhite, setIsBlackAndWhite] = useState(() => loadState('nobet_bw_theme', false));
+  
+  // User Saved Presets
+  const [savedPresets, setSavedPresets] = useState<Preset[]>(() => loadState('nobet_user_presets', []));
 
   // --- NON-PERSISTENT STATE ---
   const [result, setResult] = useState<ScheduleResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [monteCarloIters] = useState(1000); 
 
   // --- READ ONLY / SHARE MODE STATE ---
   const [isReadOnly, setIsReadOnly] = useState(false);
@@ -102,11 +104,11 @@ export default function App() {
       const shareData = parseShareLink();
       if (shareData) {
           setIsReadOnly(true);
-          setStaff(shareData.staff);
-          setServices(shareData.services);
+          setStaff(shareData.staff || []);
+          setServices(shareData.services || []);
           setResult(shareData.result);
-          setMonth(shareData.month);
-          setYear(shareData.year);
+          setMonth(shareData.month || new Date().getMonth());
+          setYear(shareData.year || new Date().getFullYear());
           setActiveTab('generate'); // Force view
       }
   }, []);
@@ -125,6 +127,8 @@ export default function App() {
   
   useEffect(() => { if(!isReadOnly) localStorage.setItem('nobet_units', JSON.stringify(customUnits)); }, [customUnits, isReadOnly]);
   useEffect(() => { if(!isReadOnly) localStorage.setItem('nobet_specialties', JSON.stringify(customSpecialties)); }, [customSpecialties, isReadOnly]);
+  
+  useEffect(() => { if(!isReadOnly) localStorage.setItem('nobet_user_presets', JSON.stringify(savedPresets)); }, [savedPresets, isReadOnly]);
 
   // Ensure role configs
   const uniqueRoles = useMemo(() => {
@@ -151,6 +155,36 @@ export default function App() {
           window.location.reload();
       }
   };
+  
+  // NEW: Handle Preset Loading
+  const handleLoadPreset = (preset: Preset) => {
+      setStaff(preset.staff);
+      setServices(preset.services);
+      
+      // Load custom metadata if exists in preset
+      if (preset.customUnits) setCustomUnits(preset.customUnits);
+      if (preset.customSpecialties) setCustomSpecialties(preset.customSpecialties);
+      
+      setUnitConstraints(preset.unitConstraints);
+      setDailyTotalTarget(preset.dailyTotalTarget);
+      setResult(null); // Clear previous results
+      alert(`"${preset.name}" şablonu başarıyla yüklendi.`);
+  };
+
+  const handleAddPreset = (newPreset: Preset) => {
+      // Check if ID exists
+      if (savedPresets.some(p => p.id === newPreset.id)) {
+          // If so, replace it? Or ensure unique ID
+          newPreset.id = `preset_${Date.now()}`;
+      }
+      setSavedPresets(prev => [...prev, newPreset]);
+  };
+
+  const handleDeletePreset = (id: string) => {
+      if (window.confirm("Bu şablonu silmek istediğinize emin misiniz?")) {
+          setSavedPresets(prev => prev.filter(p => p.id !== id));
+      }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0]) {
@@ -165,7 +199,7 @@ export default function App() {
   };
 
   const handleExportBackup = () => {
-    exportToJSON(staff, services, roleConfigs, { month, year, randomizeDays, preventEveryOther }, unitConstraints);
+    exportToJSON(staff, services, roleConfigs, { month, year, randomizeDays, preventEveryOther, dailyTotalTarget }, unitConstraints, customUnits, customSpecialties);
   };
 
   const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -176,372 +210,358 @@ export default function App() {
             if (Array.isArray(data.services)) setServices(data.services);
             if (data.roleConfigs) setRoleConfigs(data.roleConfigs);
             if (Array.isArray(data.unitConstraints)) setUnitConstraints(data.unitConstraints);
+            
+            if (data.customUnits) setCustomUnits(data.customUnits);
+            if (data.customSpecialties) setCustomSpecialties(data.customSpecialties);
+
             if (data.config) {
                 setMonth(data.config.month);
                 setYear(data.config.year);
                 setRandomizeDays(data.config.randomizeDays);
                 setPreventEveryOther(data.config.preventEveryOther);
+                if(data.config.dailyTotalTarget) setDailyTotalTarget(data.config.dailyTotalTarget);
             }
-            alert("Yedek başarıyla yüklendi!");
+            alert("Yedek başarıyla yüklendi.");
         } catch (error) {
-            alert("Yedek yüklenirken hata oluştu.");
+            alert("Yedek dosyası geçersiz veya okunamadı.");
             console.error(error);
         }
     }
   };
 
-  const handleGenerate = async () => {
-    setLoading(true);
-    setResult(null);
-    setTimeout(() => {
-      try {
-        const scheduler = new Scheduler(staff, services, {
-          year, month, maxRetries: monteCarloIters, randomizeOrder: randomizeDays, preventEveryOtherDay: preventEveryOther, 
-          unitConstraints, dailyTotalTarget
-        });
-        const res = scheduler.generate();
-        setResult(res);
-      } catch (e) {
-        console.error(e);
-        alert("Çizelge oluşturulamadı. Lütfen kısıtlamaları kontrol edin veya personel sayısının yeterli olduğundan emin olun.");
-      } finally {
-        setLoading(false);
-      }
-    }, 100);
+  const handleGenerate = () => {
+      setLoading(true);
+      // Timeout to allow UI update
+      setTimeout(() => {
+          try {
+              const scheduler = new Scheduler(staff, services, {
+                  year,
+                  month,
+                  maxRetries: 50,
+                  randomizeOrder: randomizeDays,
+                  preventEveryOtherDay: preventEveryOther,
+                  unitConstraints: unitConstraints,
+                  dailyTotalTarget: dailyTotalTarget
+              });
+              const res = scheduler.generate();
+              setResult(res);
+              setActiveTab('generate');
+          } catch (e: any) {
+              alert("Çizelge oluşturulamadı: " + e.message);
+              console.error(e);
+          } finally {
+              setLoading(false);
+          }
+      }, 100);
+  };
+  
+  const handleDownload = () => {
+      if (!result) return;
+      exportToExcel(result, services, year, month, staff);
   };
 
   const handleCreateShareLink = () => {
-      if (!result) return;
+      if(!result) return;
       const link = generateShareLink(result, services, staff, year, month);
       setShareLink(link);
+      // Copy to clipboard
+      navigator.clipboard.writeText(link).then(() => {
+          alert("Link panoya kopyalandı!");
+      });
   };
 
-  // Add the class to the OUTERMOST container
   return (
-    <div className={`min-h-screen font-sans pb-20 transition-all duration-300 ${isBlackAndWhite ? 'bg-slate-950 text-slate-100 high-contrast' : 'bg-gray-100 text-gray-800'}`}>
-      
-      {/* Header */}
-      <header className={`sticky top-0 z-30 mb-6 ${isBlackAndWhite ? '!bg-slate-900 !border-b border-slate-800 text-white' : 'bg-white border-b border-gray-200 shadow-sm'}`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row justify-between items-center py-4 gap-4">
-            <div className="flex items-center gap-3 w-full md:w-auto">
-              <div className={`p-2 rounded-xl shrink-0 ${isBlackAndWhite ? 'bg-white text-black' : 'bg-gradient-to-br from-indigo-600 to-blue-600 text-white shadow-lg shadow-indigo-500/30'}`}>
-                {ICONS.Shield}
-              </div>
-              <div className={isBlackAndWhite ? 'text-white' : ''}>
-                <h1 className="text-xl font-bold leading-none tracking-tight">Nöbetmatik</h1>
-                <span className={`text-xs font-bold tracking-wider uppercase ${isBlackAndWhite ? 'text-slate-400' : 'text-indigo-600'}`}>Enterprise Edition</span>
-              </div>
-              {isReadOnly && (
-                  <div className="ml-4 px-3 py-1 bg-amber-100 text-amber-800 text-xs font-bold uppercase rounded-full border border-amber-300 flex items-center gap-1">
-                      <Eye className="w-3 h-3" /> Salt Okunur
-                  </div>
-              )}
-            </div>
-            
-            <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
-              {/* Hide Nav in Read Only Mode */}
-              {!isReadOnly && (
-                  <nav className={`flex p-1 rounded-xl shrink-0 ${isBlackAndWhite ? '!bg-slate-800' : 'bg-gray-100 border border-gray-200'}`}>
-                    {(['staff', 'services', 'generate'] as const).map((tab) => (
-                      <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        className={`px-3 md:px-5 py-2 rounded-lg text-sm font-bold transition-all duration-200 whitespace-nowrap ${
-                          activeTab === tab 
-                            ? (isBlackAndWhite ? 'bg-slate-700 text-white shadow' : 'bg-white text-indigo-700 shadow-sm ring-1 ring-gray-200') 
-                            : (isBlackAndWhite ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900')
-                        }`}
-                      >
-                        {tab === 'staff' && 'Personel'}
-                        {tab === 'services' && 'Servisler'}
-                        {tab === 'generate' && 'Çizelge'}
-                      </button>
-                    ))}
-                  </nav>
-              )}
-              <div className="flex items-center gap-2">
-                  <button 
-                      onClick={() => { setShowInfoModal(true); setInfoTab('manual'); }}
-                      className={`p-2.5 rounded-full shrink-0 transition-all duration-200 ${isBlackAndWhite ? '!bg-slate-800 text-white border border-slate-700 hover:!bg-slate-700' : 'bg-white border border-gray-200 text-gray-400 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50'}`}
-                      title="Kılavuz ve Bilgi"
-                  >
-                      <BookOpen className="w-5 h-5"/>
-                  </button>
-                  <button 
-                      onClick={() => setIsBlackAndWhite(!isBlackAndWhite)}
-                      className={`p-2.5 rounded-full shrink-0 transition-all duration-200 ${isBlackAndWhite ? '!bg-slate-800 text-white border border-slate-700 hover:!bg-slate-700' : 'bg-white border border-gray-200 text-gray-400 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50'}`}
-                      title="Tema Değiştir"
-                  >
-                      {isBlackAndWhite ? <Sun className="w-5 h-5"/> : <Moon className="w-5 h-5"/>}
-                  </button>
-                  {isReadOnly && (
-                      <button 
-                        onClick={() => { window.location.href = window.location.origin + window.location.pathname; }}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-700`}
-                      >
-                        Yeni Oluştur
-                      </button>
-                  )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className={`min-h-screen font-sans transition-colors duration-500 ${isBlackAndWhite ? 'text-slate-100 selection:bg-indigo-500/30' : 'text-slate-900 selection:bg-indigo-100'}`}>
         
-        {/* Share Link Modal */}
-        {shareLink && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-                <div className={`bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg border ${isBlackAndWhite ? '!bg-slate-900 !border-slate-800 text-white' : 'border-gray-200'}`}>
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="font-bold text-lg flex items-center gap-2"><LinkIcon className="w-5 h-5"/> Bağlantı Oluşturuldu</h3>
-                        <button onClick={() => setShareLink(null)}><X className="w-5 h-5"/></button>
+        {/* Navbar */}
+        <nav className={`sticky top-0 z-40 backdrop-blur-md border-b transition-colors duration-500 ${isBlackAndWhite ? 'bg-slate-950/80 border-slate-800' : 'bg-white/80 border-gray-200 shadow-sm'}`}>
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="flex justify-between h-16 items-center">
+                    <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 shadow-lg shadow-indigo-500/30`}>
+                             <Activity className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                            <h1 className={`text-xl font-bold tracking-tight ${isBlackAndWhite ? 'text-white' : 'text-slate-900'}`}>Nöbetmatik <span className="text-indigo-500">v2.1</span></h1>
+                            <p className={`text-[10px] font-medium uppercase tracking-widest ${isBlackAndWhite ? 'text-slate-500' : 'text-slate-400'}`}>Enterprise Edition</p>
+                        </div>
                     </div>
-                    <p className={`text-sm mb-4 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-600'}`}>Bu bağlantıyı paylaştığınız kişiler çizelgeyi sadece görüntüleyebilir, üzerinde değişiklik yapamazlar.</p>
                     
-                    <div className={`flex items-center gap-2 p-2 rounded-lg border ${isBlackAndWhite ? '!bg-slate-800 !border-slate-700' : 'bg-gray-50 border-gray-200'}`}>
-                        <input 
-                            readOnly 
-                            value={shareLink} 
-                            className={`bg-transparent w-full text-xs outline-none ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-600'}`}
-                        />
-                        <button 
-                            onClick={() => { navigator.clipboard.writeText(shareLink); alert('Kopyalandı!'); }}
-                            className="p-2 hover:bg-white/10 rounded text-indigo-500"
-                        >
-                            <Copy className="w-4 h-4" />
-                        </button>
+                    <div className="flex items-center gap-2">
+                         {/* Theme Toggle */}
+                         <button 
+                            onClick={() => setIsBlackAndWhite(!isBlackAndWhite)}
+                            className={`p-2 rounded-full transition-colors ${isBlackAndWhite ? 'bg-slate-800 text-yellow-400 hover:bg-slate-700' : 'bg-gray-100 text-slate-600 hover:bg-gray-200'}`}
+                            title={isBlackAndWhite ? "Aydınlık Mod" : "Karanlık Mod"}
+                         >
+                            {isBlackAndWhite ? <Sun className="w-5 h-5"/> : <Moon className="w-5 h-5"/>}
+                         </button>
+
+                         <button 
+                            onClick={() => setShowInfoModal(true)}
+                            className={`p-2 rounded-full transition-colors ${isBlackAndWhite ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-gray-100 text-slate-600 hover:bg-gray-200'}`}
+                         >
+                            <Info className="w-5 h-5" />
+                         </button>
                     </div>
-                    <p className="text-[10px] text-amber-600 mt-2 flex items-center gap-1"><Info className="w-3 h-3"/> Not: Link çok uzun olabilir, WhatsApp gibi platformlarda sorunsuz çalışır.</p>
                 </div>
             </div>
-        )}
-
-        {/* Info & Manual Modal */}
-        {showInfoModal && (
-             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
-                 <div className={`relative rounded-2xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col animate-scale-in border overflow-hidden ${isBlackAndWhite ? '!bg-slate-900 !border-slate-800 text-white' : 'bg-white border-gray-200'}`}>
-                    
-                    {/* Modal Header */}
-                    <div className={`flex items-center justify-between p-4 border-b shrink-0 ${isBlackAndWhite ? 'bg-slate-950 border-slate-800' : 'bg-gray-50 border-gray-100'}`}>
-                         <div className="flex gap-2">
-                             <button onClick={() => setInfoTab('manual')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${infoTab === 'manual' ? (isBlackAndWhite ? 'bg-indigo-600 text-white' : 'bg-white shadow text-indigo-600') : 'opacity-50 hover:opacity-100'}`}>
-                                 Kullanma Kılavuzu
-                             </button>
-                             <button onClick={() => setInfoTab('about')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${infoTab === 'about' ? (isBlackAndWhite ? 'bg-indigo-600 text-white' : 'bg-white shadow text-indigo-600') : 'opacity-50 hover:opacity-100'}`}>
-                                 Sistem Hakkında
-                             </button>
-                         </div>
-                         <button onClick={() => setShowInfoModal(false)} className={`p-2 rounded-full ${isBlackAndWhite ? 'hover:bg-slate-800' : 'hover:bg-gray-200'}`}><X className="w-5 h-5"/></button>
+            
+            {/* Tab Navigation */}
+            {!isReadOnly && (
+                <div className={`border-t ${isBlackAndWhite ? 'border-slate-800' : 'border-gray-100'}`}>
+                    <div className="max-w-7xl mx-auto px-4 flex gap-1 overflow-x-auto custom-scrollbar">
+                         <button 
+                            onClick={() => setActiveTab('staff')}
+                            className={`py-3 px-4 text-sm font-bold border-b-2 transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'staff' ? (isBlackAndWhite ? 'border-indigo-500 text-indigo-400' : 'border-indigo-600 text-indigo-600') : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                         >
+                            <Users className="w-4 h-4" /> Personel Yönetimi
+                         </button>
+                         <button 
+                            onClick={() => setActiveTab('services')}
+                            className={`py-3 px-4 text-sm font-bold border-b-2 transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'services' ? (isBlackAndWhite ? 'border-indigo-500 text-indigo-400' : 'border-indigo-600 text-indigo-600') : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                         >
+                             <Settings2 className="w-4 h-4" /> Servis Kuralları
+                         </button>
+                         <button 
+                            onClick={() => setActiveTab('generate')}
+                            className={`py-3 px-4 text-sm font-bold border-b-2 transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'generate' ? (isBlackAndWhite ? 'border-indigo-500 text-indigo-400' : 'border-indigo-600 text-indigo-600') : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                         >
+                             <Zap className="w-4 h-4" /> Çizelge Oluştur
+                         </button>
                     </div>
+                </div>
+            )}
+        </nav>
 
-                    {/* Modal Content */}
-                    <div className="flex-1 overflow-y-auto p-6 md:p-8 custom-scrollbar">
-                        
-                        {/* MANUAL TAB */}
-                        {infoTab === 'manual' && (
-                            <div className="space-y-8">
+        {/* Main Content */}
+        <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+            
+            {/* Read Only Banner */}
+            {isReadOnly && (
+                <div className="mb-6 bg-indigo-600 text-white p-4 rounded-xl shadow-lg flex justify-between items-center animate-in fade-in slide-in-from-top-4">
+                    <div className="flex items-center gap-3">
+                        <Eye className="w-6 h-6 opacity-80" />
+                        <div>
+                            <h3 className="font-bold">Salt Okunur Mod (Paylaşım)</h3>
+                            <p className="text-sm opacity-80">Bu çizelge paylaşılan bir link üzerinden görüntüleniyor. Düzenleme yapılamaz.</p>
+                        </div>
+                    </div>
+                    <Button onClick={() => { setIsReadOnly(false); window.location.hash = ''; window.location.search = ''; window.location.reload(); }} className="bg-white text-indigo-700 hover:bg-indigo-50 border-none shadow-none text-sm h-9">
+                        Kendi Çizelgeni Oluştur
+                    </Button>
+                </div>
+            )}
+
+            {/* TAB: STAFF MANAGER */}
+            {activeTab === 'staff' && !isReadOnly && (
+                <StaffManager 
+                    staff={staff} setStaff={setStaff}
+                    roleConfigs={roleConfigs} setRoleConfigs={setRoleConfigs}
+                    handleResetData={handleResetData}
+                    handleFileUpload={handleFileUpload}
+                    generateTemplate={generateTemplate}
+                    handleImportBackup={handleImportBackup}
+                    handleExportBackup={handleExportBackup}
+                    isBlackAndWhite={isBlackAndWhite}
+                    daysInMonth={new Date(year, month + 1, 0).getDate()}
+                    customUnits={customUnits} setCustomUnits={setCustomUnits}
+                    customSpecialties={customSpecialties} setCustomSpecialties={setCustomSpecialties}
+                    onLoadPreset={handleLoadPreset}
+                    savedPresets={savedPresets}
+                    onAddPreset={handleAddPreset}
+                    onDeletePreset={handleDeletePreset}
+                />
+            )}
+
+            {/* TAB: SERVICES MANAGER */}
+            {activeTab === 'services' && !isReadOnly && (
+                <ServiceManager 
+                    services={services} setServices={setServices}
+                    staff={staff}
+                    isBlackAndWhite={isBlackAndWhite}
+                    unitConstraints={unitConstraints} setUnitConstraints={setUnitConstraints}
+                    dailyTotalTarget={dailyTotalTarget} setDailyTotalTarget={setDailyTotalTarget}
+                    customSpecialties={customSpecialties}
+                />
+            )}
+
+            {/* TAB: GENERATE */}
+            {activeTab === 'generate' && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    
+                    {!isReadOnly && (
+                        <Card className={`p-6 border-l-4 transition-colors ${isBlackAndWhite ? '!bg-slate-900 !border-slate-800 border-l-indigo-500' : 'border-l-indigo-500'}`}>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
                                 <div>
-                                    <h2 className="text-2xl font-bold mb-4 flex items-center gap-2"><BookOpen className="w-6 h-6 text-indigo-500"/> Nasıl Kullanılır?</h2>
-                                    <p className={`text-sm leading-relaxed ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-600'}`}>
-                                        Nöbetmatik, karmaşık nöbet kurallarını sizin için yöneten akıllı bir asistandır. İşte adım adım kullanım rehberi:
+                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>AY</label>
+                                    <select value={month} onChange={e => setMonth(parseInt(e.target.value))} className={`w-full rounded-lg shadow-sm p-2.5 border outline-none ${isBlackAndWhite ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`}>
+                                        {Array.from({length: 12}, (_, i) => i).map(m => (
+                                            <option key={m} value={m}>{new Date(2024, m).toLocaleString('tr-TR', { month: 'long' })}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className={`block text-xs font-bold uppercase tracking-wide mb-1.5 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>YIL</label>
+                                    <input type="number" value={year} onChange={e => setYear(parseInt(e.target.value))} className={`w-full rounded-lg shadow-sm p-2.5 border outline-none ${isBlackAndWhite ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`} />
+                                </div>
+                                
+                                <div className="flex items-center gap-3 pb-2">
+                                     <label className={`flex items-center gap-2 cursor-pointer text-sm font-medium ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-700'}`}>
+                                        <input type="checkbox" checked={randomizeDays} onChange={e => setRandomizeDays(e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                        <span>Rastgele Sıra</span>
+                                     </label>
+                                     <label className={`flex items-center gap-2 cursor-pointer text-sm font-medium ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-700'}`}>
+                                        <input type="checkbox" checked={preventEveryOther} onChange={e => setPreventEveryOther(e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                        <span>Gün Aşırı Engelle</span>
+                                     </label>
+                                </div>
+
+                                <Button onClick={handleGenerate} disabled={loading} className={`h-[42px] ${isBlackAndWhite ? '!bg-indigo-600 !border-indigo-500' : ''}`}>
+                                    {loading ? 'Hesaplanıyor...' : 'Çizelgeyi Oluştur'}
+                                </Button>
+                            </div>
+                        </Card>
+                    )}
+
+                    {loading && (
+                         <div className="py-20 text-center animate-pulse">
+                            <div className={`text-5xl mb-4 font-bold ${isBlackAndWhite ? 'text-indigo-400' : 'text-indigo-600'}`}>...</div>
+                            <h3 className={`text-xl font-bold ${isBlackAndWhite ? 'text-white' : 'text-gray-800'}`}>Nöbetler Dağıtılıyor</h3>
+                            <p className={isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}>Milyonlarca olasılık Monte Carlo simülasyonu ile hesaplanıyor.</p>
+                         </div>
+                    )}
+
+                    {!loading && result && (
+                        <ScheduleViewer 
+                            result={result} 
+                            setResult={setResult}
+                            services={services}
+                            staff={staff}
+                            year={year}
+                            month={month}
+                            isBlackAndWhite={isBlackAndWhite}
+                            handleDownload={handleDownload}
+                            isReadOnly={isReadOnly}
+                            onShare={handleCreateShareLink}
+                        />
+                    )}
+                </div>
+            )}
+        </main>
+
+        {/* Info Modal */}
+        {showInfoModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+                <div className={`rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden animate-scale-in flex flex-col max-h-[85vh] ${isBlackAndWhite ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white'}`}>
+                    <div className={`p-4 border-b flex justify-between items-center shrink-0 ${isBlackAndWhite ? 'bg-slate-950 border-slate-800' : 'bg-gray-50 border-gray-100'}`}>
+                        <div className="flex gap-4">
+                            <button 
+                                onClick={() => setInfoTab('manual')}
+                                className={`text-sm font-bold pb-1 border-b-2 transition-colors ${infoTab === 'manual' ? (isBlackAndWhite ? 'border-indigo-500 text-indigo-400' : 'border-indigo-600 text-indigo-600') : 'border-transparent text-gray-400'}`}
+                            >
+                                <BookOpen className="inline w-4 h-4 mr-1"/> Kullanma Kılavuzu
+                            </button>
+                            <button 
+                                onClick={() => setInfoTab('about')}
+                                className={`text-sm font-bold pb-1 border-b-2 transition-colors ${infoTab === 'about' ? (isBlackAndWhite ? 'border-indigo-500 text-indigo-400' : 'border-indigo-600 text-indigo-600') : 'border-transparent text-gray-400'}`}
+                            >
+                                <Info className="inline w-4 h-4 mr-1"/> Hakkında
+                            </button>
+                        </div>
+                        <button onClick={() => setShowInfoModal(false)} className="p-1 rounded-full hover:bg-black/10"><X className="w-5 h-5" /></button>
+                    </div>
+                    
+                    <div className="p-6 overflow-y-auto custom-scrollbar">
+                        {infoTab === 'about' ? (
+                            <div className="space-y-4">
+                                <h3 className="font-bold text-lg text-indigo-500">Nöbetmatik v2.1 Enterprise</h3>
+                                <p className={isBlackAndWhite ? 'text-gray-300' : 'text-gray-600'}>
+                                    Bu sistem, sağlık kurumlarındaki karmaşık nöbet çizelgeleme süreçlerini otomatize etmek için geliştirilmiştir.
+                                    Geleneksel yöntemlerin aksine, "Katmanlı Dağıtım" ve "Monte Carlo Simülasyonu" kullanarak milyonlarca olasılığı değerlendirir.
+                                </p>
+                                <div className={`p-4 rounded-xl border ${isBlackAndWhite ? 'bg-slate-800 border-slate-700' : 'bg-indigo-50 border-indigo-100'}`}>
+                                    <h4 className="font-bold text-sm mb-2">Temel Algoritma Prensipleri</h4>
+                                    <ul className="list-disc list-inside text-sm space-y-1 opacity-80">
+                                        <li><b>Kıdem Hiyerarşisi:</b> Sorumlu (Rol 1) > Tecrübeli (Rol 2) > Çömez (Rol 3) dengesi.</li>
+                                        <li><b>Yatay Adalet (Water Level):</b> Aynı kıdemdeki kişiler arasında nöbet farkı 1'den fazla olamaz.</li>
+                                        <li><b>Oda Arkadaşı Kuralları:</b> Oda arkadaşı nöbetçiyse veya İZİNLİ (OFF) ise çakışma engellenir.</li>
+                                        <li><b>Haftasonu Eşitliği:</b> Haftasonu nöbetleri adil dağıtılır.</li>
+                                        <li><b>Özellik Önceliği:</b> Transplantasyon vb. özel birimlerin nöbet günleri korunur.</li>
+                                    </ul>
+                                </div>
+                                
+                                <div className={`mt-6 pt-6 border-t text-center ${isBlackAndWhite ? 'border-slate-800' : 'border-gray-100'}`}>
+                                    <div className="flex flex-col gap-1 items-center justify-center">
+                                         <span className={`text-xs uppercase tracking-widest font-bold opacity-50 mb-2 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Hazırlayanlar</span>
+                                         
+                                         <div className={`font-bold text-lg ${isBlackAndWhite ? 'text-white' : 'text-gray-800'}`}>
+                                             Dr. N. Baturalp Topbaş
+                                         </div>
+                                         <div className={`text-xs font-serif italic opacity-70 ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>
+                                             & Sevgili Eşi
+                                         </div>
+                                         <div className={`font-bold text-md ${isBlackAndWhite ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                                             Hem. Kübra Belibağlı Topbaş
+                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-6">
+                                <div className="space-y-2">
+                                    <h4 className={`font-bold flex items-center gap-2 ${isBlackAndWhite ? 'text-indigo-400' : 'text-indigo-700'}`}>
+                                        <MousePointerClick className="w-4 h-4"/> 1. Personel Yönetimi
+                                    </h4>
+                                    <p className={`text-sm ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-600'}`}>
+                                        Personel ekleyin, kıdemlerini (1-3) ve hedeflerini belirleyin.
+                                        <ul className="list-disc list-inside mt-2 ml-2">
+                                            <li><b>Şablon Kütüphanesi:</b> Hazır verilerinizi "Şablon Kütüphanesi" butonuyla kaydedip geri yükleyebilirsiniz.</li>
+                                            <li><b>Ayarlar (Birim/Özellik):</b> Hastanenize özel yeni branş veya sertifika eklemek için bu menüyü kullanın.</li>
+                                            <li><b>İzinler & İstekler:</b> Personel kartındaki butonlarla takvimde işaretleme yapın.</li>
+                                        </ul>
                                     </p>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className={`p-5 rounded-xl border ${isBlackAndWhite ? 'bg-slate-800 border-slate-700' : 'bg-indigo-50/50 border-indigo-100'}`}>
-                                        <h3 className="font-bold text-lg mb-2 text-indigo-500">1. Personel Tanımlama</h3>
-                                        <ul className={`text-sm space-y-2 list-disc list-inside ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-700'}`}>
-                                            <li><b>Personel Sekmesine</b> gidin.</li>
-                                            <li>"Birim/Özellik Ayarları" butonundan hastanenizdeki branşları (Örn: Kardiyoloji) ve özellikleri (Örn: Diyaliz Sertifikası) ekleyin.</li>
-                                            <li>Personelleri tek tek ekleyin veya Excel'den toplu yükleyin.</li>
-                                            <li>Her personel için <b>Hedef Nöbet</b> sayısını ve <b>İzinli Günlerini</b> girin.</li>
-                                            <li><b>Aktiflik:</b> İzne ayrılan personelin "Tik"ini kaldırarak listeden geçici olarak çıkarabilirsiniz.</li>
+                                <div className="space-y-2">
+                                    <h4 className={`font-bold flex items-center gap-2 ${isBlackAndWhite ? 'text-indigo-400' : 'text-indigo-700'}`}>
+                                        <Settings2 className="w-4 h-4"/> 2. Servis Kuralları
+                                    </h4>
+                                    <p className={`text-sm ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-600'}`}>
+                                        Servislerinizi ve günlük kişi sayılarını (Min-Max) tanımlayın.
+                                        <ul className="list-disc list-inside mt-2 ml-2">
+                                            <li><b>Günlük Toplam Hedef:</b> Hastane genelinde günlük kaç nöbetçi olacağını buradan belirleyin.</li>
+                                            <li><b>Gün Kısıtlamaları:</b> Belirli özelliklerin (Örn: Yara Bakım) sadece belirli günlerde (Örn: Cuma) nöbet tutmasını sağlayın.</li>
                                         </ul>
-                                    </div>
+                                    </p>
+                                </div>
 
-                                    <div className={`p-5 rounded-xl border ${isBlackAndWhite ? 'bg-slate-800 border-slate-700' : 'bg-purple-50/50 border-purple-100'}`}>
-                                        <h3 className="font-bold text-lg mb-2 text-purple-500">2. Servis Kuralları</h3>
-                                        <ul className={`text-sm space-y-2 list-disc list-inside ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-700'}`}>
-                                            <li><b>Servisler Sekmesine</b> gidin.</li>
-                                            <li>Her servis için <b>Min/Max</b> personel sayısını belirleyin.</li>
-                                            <li><b>Zorunlu Branşlar:</b> Bir servise sadece belirli branştan (Örn: Sadece KBB) hemşirelerin bakmasını istiyorsanız seçin.</li>
-                                            <li><b>Özellik Kısıtlaması:</b> "Transplantasyon" gibi özellikli personellerin SADECE belirli günlerde (Örn: Cumartesi) çalışmasını istiyorsanız "Özellik/Branş Gün Kısıtlamaları" kutusundan günleri seçin.</li>
-                                        </ul>
-                                    </div>
-                                    
-                                    <div className={`p-5 rounded-xl border ${isBlackAndWhite ? 'bg-slate-800 border-slate-700' : 'bg-emerald-50/50 border-emerald-100'}`}>
-                                        <h3 className="font-bold text-lg mb-2 text-emerald-500">3. Çizelgeyi Oluştur</h3>
-                                        <ul className={`text-sm space-y-2 list-disc list-inside ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-700'}`}>
-                                            <li><b>Çizelge Sekmesine</b> geçin.</li>
-                                            <li>Ay ve Yıl seçimi yapın.</li>
-                                            <li><b>"Listeyi Oluştur"</b> butonuna basın. Sistem binlerce olasılığı deneyerek en adil listeyi sunar.</li>
-                                            <li>Sonuçları inceleyin. Kırmızı bir uyarı varsa "Boş Kalan" kısmında detayları görün.</li>
-                                        </ul>
-                                    </div>
+                                <div className="space-y-2">
+                                    <h4 className={`font-bold flex items-center gap-2 ${isBlackAndWhite ? 'text-indigo-400' : 'text-indigo-700'}`}>
+                                        <DoorOpen className="w-4 h-4"/> 3. Oda & Çakışma Mantığı
+                                    </h4>
+                                    <p className={`text-sm ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-600'}`}>
+                                        Aynı odada kalan kişilerin salon numarasını aynı girin. Sistem otomatik olarak:
+                                        <br/>a) İkisine aynı gün nöbet yazmaz (Oda boş kalmasın).
+                                        <br/>b) Biri İZİNLİ (OFF) ise diğerine de nöbet yazmaz (Birlikte izin/Yalnız kalmama).
+                                    </p>
+                                </div>
 
-                                    <div className={`p-5 rounded-xl border ${isBlackAndWhite ? 'bg-slate-800 border-slate-700' : 'bg-amber-50/50 border-amber-100'}`}>
-                                        <h3 className="font-bold text-lg mb-2 text-amber-500">4. Düzenle & Paylaş</h3>
-                                        <ul className={`text-sm space-y-2 list-disc list-inside ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-700'}`}>
-                                            <li><b>Manuel Düzenleme:</b> Çizelge üzerinde "Düzenle" modunu açın. Nöbet kutularına tıklayarak kişiyi değiştirebilir, sürükle-bırak ile yer değiştirebilirsiniz.</li>
-                                            <li><b>Excel İndir:</b> Resmi format veya personel bazlı matris formatında indirin.</li>
-                                            <li><b>Paylaş:</b> WhatsApp için kişiye özel mesaj kopyalayabilir veya "Link" oluşturarak listeyi salt okunur olarak gönderebilirsiniz.</li>
-                                        </ul>
-                                    </div>
+                                <div className="space-y-2">
+                                    <h4 className={`font-bold flex items-center gap-2 ${isBlackAndWhite ? 'text-indigo-400' : 'text-indigo-700'}`}>
+                                        <Zap className="w-4 h-4"/> 4. Çıktı & Paylaşım
+                                    </h4>
+                                    <p className={`text-sm ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-600'}`}>
+                                        Çizelgeyi oluşturduktan sonra sürükle-bırak ile düzenleyebilir, Excel olarak indirebilir veya salt okunur link oluşturarak paylaşabilirsiniz.
+                                        Excel çıktısı artık kıdeme göre sıralı ve her personel ayrı sütunda olacak şekilde düzenlenmiştir.
+                                    </p>
                                 </div>
                             </div>
                         )}
-
-                        {/* ABOUT TAB */}
-                        {infoTab === 'about' && (
-                            <div className="space-y-6">
-                                <div className={`p-6 rounded-2xl mb-8 ${isBlackAndWhite ? '!bg-slate-800 text-white' : 'bg-gradient-to-br from-indigo-600 to-blue-700 text-white shadow-xl'}`}>
-                                    <div className="flex items-center gap-2 mb-4">
-                                        <Info className="w-6 h-6" /> <span className="font-medium text-lg">Sistem Hakkında</span>
-                                    </div>
-                                    <h2 className="text-3xl font-bold mb-2">Akıllı Nöbet Algoritması v2.3</h2>
-                                    <p className="opacity-90">Nöbetmatik Enterprise, Monte Carlo simülasyonu ve "Resource Preservation" (Kaynak Koruma) motoru ile milyonlarca kombinasyonu test ederek en adil sonucu bulur.</p>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className={`p-6 border-l-4 rounded-r-xl ${isBlackAndWhite ? 'border-l-indigo-500 !bg-slate-800' : 'border-l-indigo-500 bg-indigo-50/50'}`}>
-                                        <div className="flex items-start gap-4">
-                                            <BrainCircuit className="w-8 h-8 opacity-70 shrink-0" />
-                                            <div>
-                                                <h3 className="font-bold text-xl mb-3">1. Akıllı & Adil Dağıtım</h3>
-                                                <ul className="space-y-3 text-sm">
-                                                    <li className="flex gap-3 items-start"><Zap className="w-4 h-4 mt-0.5 shrink-0 opacity-70" /> <span><b>Kaynak Koruma:</b> Sistem, nadir bulunan kıdemli personeli basit nöbetlerde harcamaz, zor günlere saklar.</span></li>
-                                                    <li className="flex gap-3 items-start"><CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 opacity-70" /> <span><b>Zorluk Analizi:</b> Her gün, önce dolması en zor olan servisler (az kişinin tutabildiği) doldurulur.</span></li>
-                                                    <li className="flex gap-3 items-start"><CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 opacity-70" /> <span><b>İstek Nöbetleri:</b> İstek günlerine maksimum öncelik verilir.</span></li>
-                                                </ul>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className={`p-6 border-l-4 rounded-r-xl ${isBlackAndWhite ? 'border-l-rose-500 !bg-slate-800' : 'border-l-rose-500 bg-rose-50/50'}`}>
-                                        <div className="flex items-start gap-4">
-                                            <ShieldCheck className="w-8 h-8 opacity-70 shrink-0" />
-                                            <div>
-                                                <h3 className="font-bold text-xl mb-3">2. Kesin Kısıtlamalar</h3>
-                                                <ul className="space-y-3 text-sm">
-                                                    <li className="flex gap-3 items-start"><Check className="w-4 h-4 mt-0.5 shrink-0 opacity-70" /> <span><b>Kesin Kota Sınırı:</b> Belirlenen (Servis/Haftasonu) hedefler asla aşılmaz.</span></li>
-                                                    <li className="flex gap-3 items-start"><Check className="w-4 h-4 mt-0.5 shrink-0 opacity-70" /> <span><b>Zorunlu Grup Kuralı:</b> Servis için bir grup seçildiyse, başka gruptan kimse o nöbeti tutamaz.</span></li>
-                                                    <li className="flex gap-3 items-start"><Check className="w-4 h-4 mt-0.5 shrink-0 opacity-70" /> <span><b>Dinlenme Süresi:</b> Peş peşe gün nöbet yazılmaz (Günaşırı).</span></li>
-                                                </ul>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className={`mt-6 p-6 border rounded-xl flex flex-col md:flex-row gap-6 items-center justify-between ${isBlackAndWhite ? '!bg-slate-800 !border-slate-700' : 'bg-gray-50 border-gray-200'}`}>
-                                     <div>
-                                        <h3 className="font-bold text-lg mb-2 flex items-center gap-2"><Zap className="w-5 h-5 text-amber-500"/> Yeni Özellikler</h3>
-                                        <ul className="space-y-2 text-sm opacity-80">
-                                            <li className="flex items-center gap-2"><Settings2 className="w-4 h-4"/> <b>Dinamik Tanımlama:</b> Artık hastanenize özel yeni branş ve özellikler ekleyebilirsiniz.</li>
-                                            <li className="flex items-center gap-2"><FileSpreadsheet className="w-4 h-4"/> <b>Matris Excel Çıktısı:</b> Personel bazlı aylık görünüm eklendi.</li>
-                                            <li className="flex items-center gap-2"><MousePointerClick className="w-4 h-4"/> <b>Sürükle-Bırak:</b> Servisler sayfasında servislerin sırasını değiştirebilirsiniz.</li>
-                                        </ul>
-                                     </div>
-                                     <div className="shrink-0 text-center px-4">
-                                        <div className="text-3xl font-black text-indigo-500">v2.3</div>
-                                        <div className="text-[10px] uppercase tracking-widest opacity-60">Enterprise</div>
-                                     </div>
-                                </div>
-                            </div>
-                        )}
-
                     </div>
-                 </div>
-             </div>
+                </div>
+            </div>
         )}
-        
-        {/* TAB: STAFF */}
-        {activeTab === 'staff' && !isReadOnly && (
-          <StaffManager 
-            staff={staff} setStaff={setStaff} 
-            roleConfigs={roleConfigs} setRoleConfigs={setRoleConfigs}
-            handleResetData={handleResetData} handleFileUpload={handleFileUpload} generateTemplate={generateTemplate}
-            handleImportBackup={handleImportBackup} handleExportBackup={handleExportBackup}
-            isBlackAndWhite={isBlackAndWhite}
-            daysInMonth={new Date(year, month + 1, 0).getDate()}
-            customUnits={customUnits} setCustomUnits={setCustomUnits}
-            customSpecialties={customSpecialties} setCustomSpecialties={setCustomSpecialties}
-          />
-        )}
-
-        {/* TAB: SERVICES */}
-        {activeTab === 'services' && !isReadOnly && (
-          <ServiceManager 
-            services={services} setServices={setServices} 
-            staff={staff} 
-            isBlackAndWhite={isBlackAndWhite}
-            unitConstraints={unitConstraints}
-            setUnitConstraints={setUnitConstraints}
-            dailyTotalTarget={dailyTotalTarget}
-            setDailyTotalTarget={setDailyTotalTarget}
-            customSpecialties={customSpecialties}
-          />
-        )}
-
-        {/* TAB: GENERATE / VIEW */}
-        {(activeTab === 'generate' || isReadOnly) && (
-           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-             
-             {/* Generate Card - Hide in Read Only */}
-             {!isReadOnly && (
-                 <Card className={`p-8 ${isBlackAndWhite ? '!bg-slate-900 text-white !border-slate-700 border-2' : 'bg-white border-t-4 border-t-indigo-500'}`}>
-                  <div className="flex flex-col gap-6">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 border-b border-gray-100 pb-6">
-                      <div>
-                        <h2 className={`text-2xl font-bold tracking-tight ${isBlackAndWhite ? 'text-white' : 'text-gray-900'}`}>Nöbet Çizelgesi Oluştur</h2>
-                        <p className={`mt-1 text-sm ${isBlackAndWhite ? 'text-gray-400' : 'text-gray-500'}`}>Gelişmiş Monte Carlo simülasyonu ile hesaplama.</p>
-                      </div>
-                      <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-                          <div className="flex gap-2 w-full sm:w-auto">
-                            <select value={month} onChange={(e) => setMonth(parseInt(e.target.value))} className={`border rounded-xl p-3 focus:ring-2 outline-none font-medium cursor-pointer w-full ${isBlackAndWhite ? '!bg-slate-800 !border-slate-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-700 focus:ring-indigo-500'}`}>
-                                {Array.from({length: 12}, (_, i) => <option key={i} value={i}>{new Date(0, i).toLocaleString('tr-TR', {month: 'long'})}</option>)}
-                            </select>
-                            <select value={year} onChange={(e) => setYear(parseInt(e.target.value))} className={`border rounded-xl p-3 focus:ring-2 outline-none font-medium cursor-pointer w-full ${isBlackAndWhite ? '!bg-slate-800 !border-slate-700 text-white' : 'border-gray-300'}`}>
-                                {Array.from({ length: 18 }, (_, i) => 2023 + i).map(y => <option key={y} value={y}>{y}</option>)}
-                            </select>
-                          </div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row justify-between items-center gap-6">
-                        <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
-                            <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${isBlackAndWhite ? '!border-slate-700 hover:!bg-slate-800' : 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50'}`}>
-                                <input type="checkbox" checked={randomizeDays} onChange={(e) => setRandomizeDays(e.target.checked)} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500" />
-                                <span className={`text-sm font-bold ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-700'}`}>Rastgele Gün Dağıtımı</span>
-                            </label>
-                            <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${isBlackAndWhite ? '!border-slate-700 hover:!bg-slate-800' : 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50'}`}>
-                                <input type="checkbox" checked={preventEveryOther} onChange={(e) => setPreventEveryOther(e.target.checked)} className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500" />
-                                <span className={`text-sm font-bold ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-700'}`}>Günaşırı Koruması</span>
-                            </label>
-                        </div>
-
-                        <Button onClick={handleGenerate} disabled={loading} className={`h-14 px-10 text-lg w-full sm:w-auto shadow-xl ${isBlackAndWhite ? 'bg-white text-black hover:bg-gray-200' : ''}`}>
-                            {loading ? 'HESAPLANIYOR...' : 'LİSTEYİ OLUŞTUR'}
-                        </Button>
-                    </div>
-                  </div>
-                </Card>
-             )}
-
-            {result && (
-                <ScheduleViewer 
-                    result={result} setResult={setResult}
-                    services={services} staff={staff} year={year} month={month}
-                    isBlackAndWhite={isBlackAndWhite}
-                    handleDownload={() => exportToExcel(result, services, year, month, staff)}
-                    isReadOnly={isReadOnly}
-                    onShare={handleCreateShareLink}
-                />
-            )}
-           </div>
-        )}
-      </main>
     </div>
   );
 }

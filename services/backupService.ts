@@ -1,3 +1,4 @@
+
 import { Staff, Service, RoleConfig, UnitConstraint } from '../types';
 
 export interface AppData {
@@ -7,11 +8,14 @@ export interface AppData {
     services: Service[];
     roleConfigs: Record<number, RoleConfig>;
     unitConstraints?: UnitConstraint[];
+    customUnits?: string[];
+    customSpecialties?: string[];
     config: {
         month: number;
         year: number;
         randomizeDays: boolean;
         preventEveryOther: boolean;
+        dailyTotalTarget?: number;
     }
 }
 
@@ -19,16 +23,20 @@ export const exportToJSON = (
     staff: Staff[],
     services: Service[],
     roleConfigs: Record<number, RoleConfig>,
-    config: { month: number; year: number; randomizeDays: boolean; preventEveryOther: boolean },
-    unitConstraints: UnitConstraint[] = []
+    config: { month: number; year: number; randomizeDays: boolean; preventEveryOther: boolean; dailyTotalTarget: number },
+    unitConstraints: UnitConstraint[] = [],
+    customUnits: string[] = [],
+    customSpecialties: string[] = []
 ) => {
     const data: AppData = {
-        version: "2.0",
+        version: "2.1",
         timestamp: new Date().toISOString(),
         staff,
         services,
         roleConfigs,
         unitConstraints,
+        customUnits,
+        customSpecialties,
         config
     };
 
@@ -49,7 +57,7 @@ export const importFromJSON = async (file: File): Promise<AppData> => {
         reader.onload = (e) => {
             try {
                 const json = JSON.parse(e.target?.result as string);
-                if (!json.version || !json.staff || !json.services) {
+                if (!json.staff || !json.services) {
                     reject(new Error("Geçersiz yedek dosyası formatı."));
                 }
                 resolve(json);

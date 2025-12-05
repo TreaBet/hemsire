@@ -5,7 +5,7 @@ import { ScheduleResult, Service, Staff, DaySchedule } from '../types';
 import { Card, Button } from './ui';
 import { ICONS } from '../constants';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Edit3, Save, X, CheckCircle2, Share2, Clipboard, GripVertical, Pencil, RotateCcw, Search, AlertTriangle, Calendar as CalendarIcon, Download, Link as LinkIcon, AlignJustify, Users, LayoutGrid, Star } from 'lucide-react';
+import { Edit3, Save, X, CheckCircle2, Share2, Clipboard, GripVertical, Pencil, RotateCcw, Search, AlertTriangle, Calendar as CalendarIcon, Link as LinkIcon, Users, LayoutGrid, Star, Download } from 'lucide-react';
 
 interface ScheduleViewerProps {
     result: ScheduleResult;
@@ -244,7 +244,7 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
             .map(d => {
                 const date = new Date(year, month, d.day);
                 const dayName = date.toLocaleString('tr-TR', { weekday: 'short' });
-                const assignment = d.assignments.find(a => a.staffId === staffId);
+                // const assignment = d.assignments.find(a => a.staffId === staffId);
                 const role = 'Servis';
                 return `${d.day} (${dayName}) - ${role}`;
             });
@@ -473,7 +473,7 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
 
                  <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-center sm:justify-end">
                     <Button variant="secondary" onClick={handleDownload} className={`text-xs h-9 flex-1 sm:flex-none ${isBlackAndWhite ? 'bg-slate-800 text-white border-slate-700 hover:bg-slate-700' : ''}`}>
-                       {ICONS.Excel} Excel
+                       {ICONS.Excel} Excel Raporu (Tümü)
                     </Button>
                     <Button variant="secondary" onClick={() => setWhatsAppModalOpen(true)} className={`text-xs h-9 flex-1 sm:flex-none ${isBlackAndWhite ? 'bg-slate-800 text-white border-slate-700 hover:bg-slate-700' : ''}`}>
                        <Share2 className="w-4 h-4" /> Paylaş
@@ -539,7 +539,7 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
             
             {viewMode === 'daily' ? (
                 /* --- DAILY VIEW --- */
-                <Card className={`report-table-container shadow-lg border-0 overflow-hidden ${isBlackAndWhite ? 'bg-slate-900' : ''}`}>
+                <Card className={`report-table-container shadow-lg border-0 overflow-x-auto ${isBlackAndWhite ? 'bg-slate-900' : ''}`}>
                       <table className="report-table w-full">
                         <thead>
                           <tr>
@@ -621,79 +621,87 @@ export const ScheduleViewer: React.FC<ScheduleViewerProps> = ({ result, setResul
                 </Card>
             ) : (
                 /* --- STAFF VIEW (MATRIX) --- */
-                <Card className={`report-table-container shadow-lg border-0 overflow-hidden ${isBlackAndWhite ? 'bg-slate-900' : ''}`}>
-                    <table className="report-table w-full">
-                        <thead>
-                            <tr>
-                                <th className={`sticky-col w-48 shadow-lg z-30 text-left pl-4 ${isBlackAndWhite ? 'bg-slate-950 text-white border-b border-slate-700' : 'bg-gray-800 text-white'}`}>
-                                    Personel
-                                </th>
-                                {result.schedule.map(d => (
-                                    <th key={d.day} className={`w-10 text-center px-1 ${isBlackAndWhite ? 'bg-slate-950 text-white border-b border-slate-700' : ''} ${d.isWeekend ? (isBlackAndWhite ? 'bg-slate-800' : 'bg-orange-500/20 text-white') : ''}`}>
-                                        <div className="text-xs font-normal opacity-70">{new Date(year, month, d.day).toLocaleString('tr-TR', {weekday: 'short'})}</div>
-                                        <div className="text-sm font-bold">{d.day}</div>
+                <Card className={`shadow-lg border-0 overflow-hidden ${isBlackAndWhite ? 'bg-slate-900' : ''}`}>
+                    {/* Header for Staff View with Download Button */}
+                    <div className={`p-4 border-b flex justify-between items-center ${isBlackAndWhite ? 'border-slate-800 bg-slate-950' : 'border-gray-200 bg-gray-50'}`}>
+                        <div className="flex items-center gap-2">
+                             <Users className={`w-5 h-5 ${isBlackAndWhite ? 'text-indigo-400' : 'text-indigo-600'}`} />
+                             <h3 className={`font-bold ${isBlackAndWhite ? 'text-white' : 'text-gray-800'}`}>Personel Bazlı Liste</h3>
+                        </div>
+                        <Button variant="secondary" onClick={handleDownload} className={`text-xs h-8 ${isBlackAndWhite ? 'bg-slate-800 text-white border-slate-700 hover:bg-slate-700' : ''}`}>
+                            <Download className="w-4 h-4 mr-2" /> Excel İndir
+                        </Button>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                        <table className="report-table w-full">
+                            <thead>
+                                <tr>
+                                    <th className={`sticky-col w-48 shadow-lg z-30 text-left pl-4 ${isBlackAndWhite ? 'bg-slate-950 text-white border-b border-slate-700' : 'bg-gray-800 text-white'}`}>
+                                        Personel
                                     </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {sortedStaff.map(person => (
-                                <tr key={person.id}>
-                                    <td className={`sticky-col p-2 border-r ${isBlackAndWhite ? 'bg-slate-900 border-slate-700 text-slate-200' : 'border-gray-200'}`}>
-                                        <div className="font-bold text-sm truncate flex items-center gap-1" title={person.name}>
-                                            {person.name}
-                                            {person.role === 1 && <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />}
-                                        </div>
-                                        <div className="text-[10px] opacity-60 truncate">{person.unit}</div>
-                                    </td>
-                                    {result.schedule.map(day => {
-                                        // Find assignment for this person on this day
-                                        const assignment = day.assignments.find(a => a.staffId === person.id);
-                                        const isOff = person.offDays.includes(day.day);
-                                        const isRequested = person.requestedDays.includes(day.day);
-                                        const isWeekend = day.isWeekend;
-
-                                        let cellClass = isBlackAndWhite ? "hover:bg-slate-800 cursor-pointer" : "hover:bg-gray-50 cursor-pointer";
-                                        let content = null;
-
-                                        if (assignment) {
-                                            const serviceName = services.find(s => s.id === assignment.serviceId)?.name || '?';
-                                            // Shorten service name
-                                            const shortName = serviceName.length > 8 ? serviceName.substring(0, 6) + '..' : serviceName;
-                                            
-                                            const bgColor = isBlackAndWhite ? 'bg-indigo-900/50 text-indigo-200 border-indigo-900' : 'bg-indigo-50 text-indigo-800 border-indigo-200';
-
-                                            content = (
-                                                <div className={`text-[10px] font-bold text-center py-1 px-0.5 rounded border leading-tight ${bgColor}`} title={serviceName}>
-                                                    {shortName}
-                                                </div>
-                                            );
-                                        } else if (isOff) {
-                                            content = <div className={`text-[10px] text-center font-bold opacity-40 ${isBlackAndWhite ? 'text-gray-500' : 'text-gray-400'}`}>İZİN</div>;
-                                            cellClass += isBlackAndWhite ? " bg-slate-950/30" : " bg-gray-100/50";
-                                        } else if (isRequested) {
-                                             content = <div className={`w-2 h-2 rounded-full mx-auto ${isBlackAndWhite ? 'bg-blue-500' : 'bg-blue-400'}`} title="Nöbet İsteği"></div>
-                                        }
-
-                                        // Apply weekend shading
-                                        if (isWeekend) {
-                                             cellClass += isBlackAndWhite ? " bg-slate-800/30" : " bg-orange-50/30";
-                                        }
-
-                                        return (
-                                            <td 
-                                                key={day.day} 
-                                                className={`p-1 border-r border-b text-center align-middle transition-colors ${isBlackAndWhite ? 'border-slate-800' : 'border-gray-100'} ${cellClass}`}
-                                                onClick={() => !isReadOnly && setEditingStaffSlot({ day: day.day, staffId: person.id })}
-                                            >
-                                                {content}
-                                            </td>
-                                        );
-                                    })}
+                                    {result.schedule.map(d => (
+                                        <th key={d.day} className={`w-10 text-center px-1 ${isBlackAndWhite ? 'bg-slate-950 text-white border-b border-slate-700' : ''} ${d.isWeekend ? (isBlackAndWhite ? 'bg-slate-800' : 'bg-orange-500/20 text-white') : ''}`}>
+                                            <div className="text-xs font-normal opacity-70">{new Date(year, month, d.day).toLocaleString('tr-TR', {weekday: 'short'})}</div>
+                                            <div className="text-sm font-bold">{d.day}</div>
+                                        </th>
+                                    ))}
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {sortedStaff.map(person => (
+                                    <tr key={person.id}>
+                                        <td className={`sticky-col p-2 border-r ${isBlackAndWhite ? 'bg-slate-900 border-slate-700 text-slate-200' : 'border-gray-200'}`}>
+                                            <div className="font-bold text-sm truncate flex items-center gap-1" title={person.name}>
+                                                {person.name}
+                                                {person.role === 1 && <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />}
+                                            </div>
+                                            <div className="text-[10px] opacity-60 truncate">{person.unit}</div>
+                                        </td>
+                                        {result.schedule.map(day => {
+                                            const assignment = day.assignments.find(a => a.staffId === person.id);
+                                            const isOff = person.offDays.includes(day.day);
+                                            const isRequested = person.requestedDays.includes(day.day);
+                                            const isWeekend = day.isWeekend;
+
+                                            let cellClass = isBlackAndWhite ? "hover:bg-slate-800 cursor-pointer" : "hover:bg-gray-50 cursor-pointer";
+                                            let content = null;
+
+                                            if (assignment) {
+                                                const serviceName = services.find(s => s.id === assignment.serviceId)?.name || '?';
+                                                const shortName = serviceName.length > 8 ? serviceName.substring(0, 6) + '..' : serviceName;
+                                                const bgColor = isBlackAndWhite ? 'bg-indigo-900/50 text-indigo-200 border-indigo-900' : 'bg-indigo-50 text-indigo-800 border-indigo-200';
+                                                content = (
+                                                    <div className={`text-[10px] font-bold text-center py-1 px-0.5 rounded border leading-tight ${bgColor}`} title={serviceName}>
+                                                        {shortName}
+                                                    </div>
+                                                );
+                                            } else if (isOff) {
+                                                content = <div className={`text-[10px] text-center font-bold opacity-40 ${isBlackAndWhite ? 'text-gray-500' : 'text-gray-400'}`}>İZİN</div>;
+                                                cellClass += isBlackAndWhite ? " bg-slate-950/30" : " bg-gray-100/50";
+                                            } else if (isRequested) {
+                                                content = <div className={`w-2 h-2 rounded-full mx-auto ${isBlackAndWhite ? 'bg-blue-500' : 'bg-blue-400'}`} title="Nöbet İsteği"></div>
+                                            }
+
+                                            if (isWeekend) {
+                                                cellClass += isBlackAndWhite ? " bg-slate-800/30" : " bg-orange-50/30";
+                                            }
+
+                                            return (
+                                                <td 
+                                                    key={day.day} 
+                                                    className={`p-1 border-r border-b text-center align-middle transition-colors ${isBlackAndWhite ? 'border-slate-800' : 'border-gray-100'} ${cellClass}`}
+                                                    onClick={() => !isReadOnly && setEditingStaffSlot({ day: day.day, staffId: person.id })}
+                                                >
+                                                    {content}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </Card>
             )}
 

@@ -545,6 +545,12 @@ export class Scheduler {
               if (assignedTodayIds.has(roommateId)) return false;
               if (this.hasShiftOnDay(dayAssignmentsMap, day - 1, roommateId)) return false;
               if (this.hasShiftOnDay(dayAssignmentsMap, day + 1, roommateId)) return false;
+
+              // NEW RULE: If roommate is OFF today, I cannot work.
+              const roommate = this.staff.find(r => r.id === roommateId);
+              if (roommate && roommate.offDays.includes(day)) {
+                  return false;
+              }
           }
 
           // 6. Quotas (Strict - Never exceed even in desperate)

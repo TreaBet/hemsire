@@ -3,9 +3,9 @@ import * as XLSX from 'xlsx';
 import { ScheduleResult, Service, Staff } from '../types';
 
 const formatDate = (day: number, month: number, year: number): string => {
-    const d = day.toString().padStart(2, '0');
-    const m = (month + 1).toString().padStart(2, '0');
-    return `${d}.${m}.${year}`;
+    const date = new Date(year, month, day);
+    // Tarih formatı: 01.01.2024 Pazartesi
+    return date.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', weekday: 'long' });
 };
 
 export const exportToExcel = (result: ScheduleResult, services: Service[], year: number, month: number, staffList: Staff[]) => {
@@ -14,31 +14,72 @@ export const exportToExcel = (result: ScheduleResult, services: Service[], year:
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
   // --- GENEL LİSTE ---
-  const headersMain = ['Tarih', 'Gün', ...services.map(s => s.name)];
+  
+  // 1. Servislerin maksimum kişi sayısını bul (Dinamik Sütunlar için)
+  const serviceMaxCounts: Record<string, number> = {};
+  services.forEach(s => {
+      let max = 0;
+      result.schedule.forEach(day => {
+          const count = day.assignments.filter(a => a.serviceId === s.id).length;
+          if (count > max) max = count;
+      });
+      // En az 1 sütun olsun
+      serviceMaxCounts[s.id] = Math.max(max, 1);
+  });
+
+  // 2. Başlıkları Oluştur
+  const headersMain = ['Tarih'];
+  services.forEach(s => {
+      const count = serviceMaxCounts[s.id];
+      for(let i=1; i<=count; i++) {
+          headersMain.push(`${s.name} ${i}`);
+      }
+  });
+
   const dataMain: any[] = [];
 
   result.schedule.forEach((daySchedule) => {
-    const date = new Date(year, month, daySchedule.day);
-    const dayName = date.toLocaleString('tr-TR', { weekday: 'long' });
     const isWeekend = daySchedule.isWeekend;
-
+    
+    // Satır Verisi
     const row: any = {
       'Tarih': formatDate(daySchedule.day, month, year),
-      'Gün': isWeekend ? `${dayName} (HS)` : dayName
     };
 
     services.forEach(service => {
-      const assignments = daySchedule.assignments.filter(a => a.serviceId === service.id);
-      if (assignments.length > 0) {
-          const names = assignments.map(a => {
-              if (a.staffId === 'EMPTY') return '--- BOŞ ---';
-              // Check if staff is Senior (Role 1)
-              const staffDef = staffList.find(s => s.id === a.staffId);
-              return (staffDef && staffDef.role === 1) ? `${a.staffName} (K)` : a.staffName;
-          }).join(', ');
-          row[service.name] = names;
-      } else {
-          row[service.name] = '-';
+      // O günkü, o servise ait atamaları al
+      let assignments = daySchedule.assignments.filter(a => a.serviceId === service.id);
+      
+      // SORGU: Kıdeme Göre Sırala (1: Kıdemli, 2: Tecrübeli, 3: Çömez)
+      // Role 0 (EMPTY) genelde en sona kalsın veya boş olarak işlensin.
+      assignments.sort((a, b) => {
+          // Eğer biri boşsa onu sona at
+          if (a.staffId === 'EMPTY') return 1;
+          if (b.staffId === 'EMPTY') return -1;
+          return a.role - b.role;
+      });
+
+      const maxCols = serviceMaxCounts[service.id];
+      
+      for(let i=0; i<maxCols; i++) {
+          const colName = `${service.name} ${i+1}`;
+          if (assignments[i]) {
+              const a = assignments[i];
+              
+              if (a.staffId === 'EMPTY') {
+                  // İSTEK: Boş yerleri yazma
+                  row[colName] = ''; 
+              } else {
+                  let displayName = a.staffName;
+                  if (a.role === 1) {
+                      displayName += ' (K)'; // Kıdemli işareti
+                  }
+                  row[colName] = displayName;
+              }
+          } else {
+              // İSTEK: Boş yerleri yazma
+              row[colName] = ''; 
+          }
       }
     });
 
@@ -46,30 +87,60 @@ export const exportToExcel = (result: ScheduleResult, services: Service[], year:
   });
 
   const wsMain = XLSX.utils.json_to_sheet(dataMain, { header: headersMain });
-  wsMain['!cols'] = [{ wch: 12 }, { wch: 15 }, ...services.map(s => ({ wch: 30 }))];
+  
+  // Sütun Genişlikleri
+  const cols = [{ wch: 25 }]; // Tarih sütunu biraz geniş
+  services.forEach(s => {
+      const count = serviceMaxCounts[s.id];
+      for(let i=0; i<count; i++) cols.push({ wch: 20 });
+  });
+  wsMain['!cols'] = cols;
+
+  // Haftasonu Renklendirme Mantığı
+  if (result.schedule.length > 0) {
+      const range = XLSX.utils.decode_range(wsMain['!ref'] || "A1:A1");
+      for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+          const dayIndex = R - 1; 
+          if (result.schedule[dayIndex] && result.schedule[dayIndex].isWeekend) {
+              for (let C = range.s.c; C <= range.e.c; ++C) {
+                  const cell_address = { c: C, r: R };
+                  const cell_ref = XLSX.utils.encode_cell(cell_address);
+                  if (!wsMain[cell_ref]) wsMain[cell_ref] = { t: 's', v: '' }; // Boşsa oluştur
+                  
+                  // Hücre stili
+                  wsMain[cell_ref].s = {
+                      fill: { patternType: "solid", fgColor: { rgb: "FFF2CC" } }, // Açık Sarı
+                      font: { bold: true }
+                  };
+              }
+          }
+      }
+  }
+
   XLSX.utils.book_append_sheet(wb, wsMain, "Genel Liste");
 
   // --- PERSONEL LİSTESİ (Matrix) ---
   
-  // Gün Başlıklarını Oluştur (Örn: 1 Pzt, 2 Sal)
-  const daysHeader: string[] = [];
+  const daysInMonthList: string[] = [];
   for (let d = 1; d <= daysInMonth; d++) {
-      const date = new Date(year, month, d);
-      const shortDay = date.toLocaleString('tr-TR', { weekday: 'short' });
-      daysHeader.push(`${d} ${shortDay}`);
+      daysInMonthList.push(d.toString());
   }
 
-  const headersPerson = ['Ad Soyad', 'Branş', 'Salon', 'Kıdem', 'Toplam', ...daysHeader];
+  // İSTEK: Branş sütununu kaldır
+  const headersPerson = ['Ad Soyad', 'Kıdem', 'Toplam', ...daysInMonthList];
   
   const dataPerson: any[] = [];
-  const sortedStaff = [...staffList].sort((a, b) => a.unit.localeCompare(b.unit) || a.name.localeCompare(b.name));
+  
+  // SIRALAMA: Önce Kıdem (Role ASC), Sonra İsim
+  const sortedStaff = [...staffList].sort((a, b) => {
+      if (a.role !== b.role) return a.role - b.role; // 1 (Kıdemli) önce gelir
+      return a.name.localeCompare(b.name);
+  });
 
   sortedStaff.forEach(person => {
       const stats = result.stats.find(s => s.staffId === person.id);
       const row: any = {
           'Ad Soyad': person.role === 1 ? `${person.name} (K)` : person.name,
-          'Branş': person.unit,
-          'Salon': person.room,
           'Kıdem': person.role,
           'Toplam': stats?.totalShifts || 0
       };
@@ -77,14 +148,13 @@ export const exportToExcel = (result: ScheduleResult, services: Service[], year:
       for (let d = 1; d <= daysInMonth; d++) {
           const daySchedule = result.schedule.find(s => s.day === d);
           const assignment = daySchedule?.assignments.find(a => a.staffId === person.id);
-          const headerKey = daysHeader[d-1]; // Index 0 based
+          const headerKey = d.toString(); 
           
           if (assignment) {
-              // Servis adını kısaltarak yaz (Örn: Genel Cerrahi -> G.Cer)
               const service = services.find(s => s.id === assignment.serviceId);
-              let val = service ? service.name : 'NÖBET';
+              let val = service ? service.name : 'X';
               
-              // Basit kısaltmalar
+              // Kısaltmalar
               if (val.includes('Genel Cerrahi')) val = 'G.Cer';
               else if (val.includes('KBB')) val = 'KBB';
               else if (val.includes('Plastik')) val = 'Plst';
@@ -101,16 +171,35 @@ export const exportToExcel = (result: ScheduleResult, services: Service[], year:
 
   const wsPerson = XLSX.utils.json_to_sheet(dataPerson, { header: headersPerson });
   
-  // Sütun genişliklerini ayarla
   wsPerson['!cols'] = [
       { wch: 20 }, // Ad Soyad
-      { wch: 15 }, // Branş
-      { wch: 8 },  // Salon
       { wch: 6 },  // Kıdem
       { wch: 8 },  // Toplam
-      ...daysHeader.map(() => ({ wch: 6 })) // Günler
+      ...daysInMonthList.map(() => ({ wch: 4 })) // Günler dar olsun
   ];
   
+  // Personel listesinde de haftasonu sütunlarını boyayalım
+  const rangeP = XLSX.utils.decode_range(wsPerson['!ref'] || "A1:A1");
+  // Kolon bazlı boyama (Gün sütunları için)
+  for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(year, month, d);
+      const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+      if (isWeekend) {
+          // Header row (0) + Data rows
+          // İndeksler değişti: 0:Ad, 1:Kıdem, 2:Toplam -> Günler 3. indeksten başlar
+          const colIndex = 3 + (d - 1); 
+          for (let R = rangeP.s.r; R <= rangeP.e.r; ++R) {
+               const cell_address = { c: colIndex, r: R };
+               const cell_ref = XLSX.utils.encode_cell(cell_address);
+               if (!wsPerson[cell_ref]) wsPerson[cell_ref] = { t: 's', v: '' };
+
+               wsPerson[cell_ref].s = {
+                   fill: { patternType: "solid", fgColor: { rgb: "E2EFDA" } } // Açık Yeşil/Gri
+               };
+          }
+      }
+  }
+
   XLSX.utils.book_append_sheet(wb, wsPerson, "Personel Bazlı");
 
   XLSX.writeFile(wb, `Nobet_Listesi_${monthName}_${year}.xlsx`);
