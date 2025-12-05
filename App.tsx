@@ -483,7 +483,7 @@ export default function App() {
                                 <div className={`p-4 rounded-xl border ${isBlackAndWhite ? 'bg-slate-800 border-slate-700' : 'bg-indigo-50 border-indigo-100'}`}>
                                     <h4 className="font-bold text-sm mb-2">Temel Algoritma Prensipleri</h4>
                                     <ul className="list-disc list-inside text-sm space-y-1 opacity-80">
-                                        <li><b>Kıdem Hiyerarşisi:</b> Sorumlu (Rol 1) > Tecrübeli (Rol 2) > Çömez (Rol 3) dengesi.</li>
+                                        <li><b>Kıdem Hiyerarşisi:</b> Sorumlu (Rol 1) &gt; Tecrübeli (Rol 2) &gt; Çömez (Rol 3) dengesi.</li>
                                         <li><b>Yatay Adalet (Water Level):</b> Aynı kıdemdeki kişiler arasında nöbet farkı 1'den fazla olamaz.</li>
                                         <li><b>Oda Arkadaşı Kuralları:</b> Oda arkadaşı nöbetçiyse veya İZİNLİ (OFF) ise çakışma engellenir.</li>
                                         <li><b>Haftasonu Eşitliği:</b> Haftasonu nöbetleri adil dağıtılır.</li>
@@ -513,27 +513,27 @@ export default function App() {
                                     <h4 className={`font-bold flex items-center gap-2 ${isBlackAndWhite ? 'text-indigo-400' : 'text-indigo-700'}`}>
                                         <MousePointerClick className="w-4 h-4"/> 1. Personel Yönetimi
                                     </h4>
-                                    <p className={`text-sm ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-600'}`}>
+                                    <div className={`text-sm ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-600'}`}>
                                         Personel ekleyin, kıdemlerini (1-3) ve hedeflerini belirleyin.
                                         <ul className="list-disc list-inside mt-2 ml-2">
                                             <li><b>Şablon Kütüphanesi:</b> Hazır verilerinizi "Şablon Kütüphanesi" butonuyla kaydedip geri yükleyebilirsiniz.</li>
                                             <li><b>Ayarlar (Birim/Özellik):</b> Hastanenize özel yeni branş veya sertifika eklemek için bu menüyü kullanın.</li>
                                             <li><b>İzinler & İstekler:</b> Personel kartındaki butonlarla takvimde işaretleme yapın.</li>
                                         </ul>
-                                    </p>
+                                    </div>
                                 </div>
 
                                 <div className="space-y-2">
                                     <h4 className={`font-bold flex items-center gap-2 ${isBlackAndWhite ? 'text-indigo-400' : 'text-indigo-700'}`}>
                                         <Settings2 className="w-4 h-4"/> 2. Servis Kuralları
                                     </h4>
-                                    <p className={`text-sm ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-600'}`}>
+                                    <div className={`text-sm ${isBlackAndWhite ? 'text-gray-300' : 'text-gray-600'}`}>
                                         Servislerinizi ve günlük kişi sayılarını (Min-Max) tanımlayın.
                                         <ul className="list-disc list-inside mt-2 ml-2">
                                             <li><b>Günlük Toplam Hedef:</b> Hastane genelinde günlük kaç nöbetçi olacağını buradan belirleyin.</li>
                                             <li><b>Gün Kısıtlamaları:</b> Belirli özelliklerin (Örn: Yara Bakım) sadece belirli günlerde (Örn: Cuma) nöbet tutmasını sağlayın.</li>
                                         </ul>
-                                    </p>
+                                    </div>
                                 </div>
 
                                 <div className="space-y-2">
